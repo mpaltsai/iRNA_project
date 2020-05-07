@@ -33,6 +33,9 @@ option_list = list(
   make_option(c("-m", "--method"), type = "character", default = "pearson",
               help = "correlation method [default= %default]\n 
               other options: kendall, spearman", metavar = "character"),
+  #level of significance
+  make_option(c("-a", "--alpha"), type = "numeric", default = 0.05,
+              help = "significance level [default= %default]", metavar = "character"),
   #a correction method for p values returned from correlation
   make_option(c("-p", "--pAdjustMethod"), type = "character", default = "fdr",
               help = "p value adjustment [default = %default]", metavar = "character"),
@@ -50,7 +53,7 @@ option_list = list(
 opt_parser = OptionParser(option_list=option_list);
 opt = parse_args(opt_parser);
 
-message('loading libraries, please wait')
+message('\nloading libraries, please wait')
 #load packages
 #suppressPackageStartupMessages(library(shiny))
 #suppressPackageStartupMessages(library(RColorBrewer))
@@ -74,6 +77,7 @@ paramCorrMethod     = opt$method
 paramCorrPAdjust    = opt$pAdjustMethod   
 paramSeuMinFeatures = 200
 paramGeneSparcityThr= opt$geneSparsity
+alpha.level         = opt$alpha
 
 
 #read data
@@ -108,8 +112,8 @@ genes.incl = strsplit(opt$targetGenes, ",")
 genes.incl = genes.incl[[1]]
 genes.incl = toupper(genes.incl)
 
-message("Analysis will run with ", length(genes.incl), " genes")
-message("these genes are: ")
+message("\nAnalysis will run with ", length(genes.incl), " gene(s):\n")
+
 cat(genes.incl, sep = " ", "\n")
 
 
@@ -117,11 +121,22 @@ cat(genes.incl, sep = " ", "\n")
 genes.xcl = c()
 #setdiff(genes.incl, intersect(names(cor.res), genes.incl))
 
+#create a directory to store results of the form ~/directory-running-iRNA/results/timestamp
+#check if the directory exists and if not create it
+res.dir = ifelse(!dir.exists(file.path(getwd(), "results")), dir.create(file.path(getwd(), "results")), FALSE)
+#create a sub directory, name it with a timestamp
+st=format(Sys.time(), "%Y-%m-%d_%H:%M")
+dir.create(file.path(getwd(), "results", st))
+the.path = file.path(getwd(), "results", st)
+message("\nCreating a directory to store results\n")
+message(" ",the.path )
+
 start.cor.time = Sys.time()
 
 for( x in 1:length(genes.incl)){
   
   selectedGene         = genes.incl[x]
+  message("\n ------Working on ", selectedGene, "------")
 
   refRowIndex = which(row.names(seurat.sub.nonzero)==selectedGene)
   
@@ -166,6 +181,8 @@ for( x in 1:length(genes.incl)){
   #exclude the row of the selected gene
   F = F[-refRowIndex,]
   
+  #compute the percentage of cells (in the whole dataset) where the selected gene is expressed
+  sel.gene.percent = ncol(Eb)/ncol(div)
   #Check for correlation between the selected gene and all other genes in all cells in F
   #use the transpose matrices
   Eb.t = as.matrix(t(Eb[["RNA"]]@data))
@@ -175,14 +192,15 @@ for( x in 1:length(genes.incl)){
   #make a function to supress warnings
   cor.fun <- function(){
     #initialize a matrix to keep the results of the correlation test and the wilcoxon test
-    corr.matrix = matrix(nrow = nrow(F), ncol = 3)
+    corr.matrix = matrix(nrow = nrow(F), ncol = 5)
     rownames(corr.matrix) <- rownames(F)
-    colnames(corr.matrix) <- c("r", "p_r", "p_w")
+    colnames(corr.matrix) <- c("r", "p_r", "p_w", "percentage in Ea", "percentage in Eb")
     
     for(j in 1:nrow(F)){
       
       #run the correlation test
-      corr.output =  corr.test(as.numeric(Eb.t), as.numeric(F.t[,j]), method = paramCorrMethod, adjust = paramCorrPAdjust, ci = FALSE )
+      corr.output =  corr.test(as.numeric(Eb.t), as.numeric(F.t[,j]), method = paramCorrMethod, 
+                               adjust = paramCorrPAdjust, alpha = alpha.level, ci = FALSE )
       #append results to corr.matrix
       #corr.matrix[j,1] = colnames(F.t)[j]
       corr.matrix[j,1] = corr.output$r
@@ -210,8 +228,18 @@ for( x in 1:length(genes.incl)){
     #in cells where the selected gene is not expressed
     x.set = as.numeric(seurat.sub.nonzero[["RNA"]]@data[rownames(corr.sign)[i], colnames(Ea)])
     
+    #the percentage of cells in Ea the selected gene is expressed
+    percent.Ea = length(x.set[which(x.set>0)])/length(x.set)
+    #append it to corr.sign
+    corr.sign[i,4] = percent.Ea
+    
     #where the selected gene is expressed
     y.set = as.numeric(seurat.sub.nonzero[["RNA"]]@data[rownames(corr.sign)[i], colnames(Eb)])
+    
+    #the percentage of cells in Eb the selected gene is expressed
+    percent.Eb= length(y.set[which(y.set>0)])/length(y.set)
+    #append it to corr.sign
+    corr.sign[i,5] = percent.Eb
     
     #run the test
     p.value.wtest = wilcox.test(x.set,y.set)$p.value
@@ -229,24 +257,24 @@ for( x in 1:length(genes.incl)){
   
   #keep genes with r>0.1
   corr.ordered <- corr.ordered[which(abs(as.numeric(corr.ordered[,1]))>0.1),]
-  
-  message("\n Creating a directory to hold results")
-  dir.create(file.path(getwd(), "results/"))
-  #check if the directory exists and if not create it
-  ifelse(!dir.exists(file.path(getwd(), "results/")), dir.create(file.path(getwd(), "results/")), FALSE)
-  
+
   message("\n Writing results to files")
   
   #Writing results to files
-  outputPath          = paste0("results/",selectedGene, '/')
+  outputPath          = paste0(the.path,'/', selectedGene, '/')
+ 
   #check if the directory exists and if not create it
-  ifelse(!dir.exists(file.path(getwd(), outputPath)), dir.create(file.path(getwd(), outputPath)), FALSE)
+  ifelse(!dir.exists(outputPath), dir.create(outputPath), FALSE)
   
-  f.path = paste0(file.path(getwd(), outputPath), paste0(selectedGene,"_", mitoRatio,"_", dataset.name,'.csv'))
+  f.path = paste0(outputPath, paste0(selectedGene,"_", mitoRatio,"_", dataset.name,'.csv'))
   
   #append parameters of analysis to file
-  cat(paste0("paramCorrMethod: ",paramCorrMethod,"\n"), paste0("paramCorrPAdjust: ",paramCorrPAdjust,"\n"), 
-      paste0("paramGeneSparcityThr: ", paramGeneSparcityThr, "\n"), paste0("dataset: ", dataset.name, "\n"), 
+  cat(paste0("paramCorrMethod: ",paramCorrMethod,"\n"), 
+      paste0("level of significance: ", alpha.level, "\n"),
+      paste0("paramCorrPAdjust: ",paramCorrPAdjust,"\n"), 
+      paste0("paramGeneSparcityThr: ", paramGeneSparcityThr, "\n"), 
+      paste0("dataset: ", dataset.name, "\n"), 
+      paste0("percentage of cells where the selected gene is expressed: ", sel.gene.percent, "\n"),
       paste0("mitoRatio: ", mitoRatio), file=f.path)
   
   #write the ordered matrix of correlated genes with r coefficients and p values to the designated directory
@@ -259,18 +287,26 @@ for( x in 1:length(genes.incl)){
   cor.res[paste0(selectedGene, "_neg.cor")] <-list(corr.ordered[which(corr.ordered[,"r"]<0), , drop =FALSE])
   #cor.res[selectedGene]
   
-  f.path = paste0(file.path(getwd(), outputPath), paste0(selectedGene, "_pos.cor"),"_", mitoRatio,"_", dataset.name,'.csv')
+  f.path = paste0(outputPath, paste0(selectedGene, "_pos.cor"),"_", mitoRatio,"_", dataset.name,'.csv')
   #append parameters of analysis to file
-  cat(paste0("paramCorrMethod: ",paramCorrMethod,"\n"), paste0("paramCorrPAdjust: ",paramCorrPAdjust,"\n"), 
-      paste0("paramGeneSparcityThr: ", paramGeneSparcityThr, "\n"), paste0("dataset: ", dataset.name, "\n"), 
+  cat(paste0("paramCorrMethod: ",paramCorrMethod,"\n"), 
+      paste0("level of significance: ", alpha.level, "\n"),
+      paste0("paramCorrPAdjust: ",paramCorrPAdjust,"\n"), 
+      paste0("paramGeneSparcityThr: ", paramGeneSparcityThr, "\n"), 
+      paste0("dataset: ", dataset.name, "\n"), 
+      paste0("percentage of cells where the selected gene is expressed: ", sel.gene.percent, "\n"),
       paste0("mitoRatio: ", mitoRatio), file=f.path)
   #write the ordered matrix of correlated genes with r coefficients and p values to the designated directory
   suppressWarnings(write.table( cor.res[paste0(selectedGene, "_pos.cor")], f.path, sep=",", append=TRUE, col.names=NA))
   
-  f.path = paste0(file.path(getwd(), outputPath), paste0(selectedGene, "_neg.cor"),"_", mitoRatio,"_", dataset.name,'.csv')
+  f.path = paste0(outputPath, paste0(selectedGene, "_neg.cor"),"_", mitoRatio,"_", dataset.name,'.csv')
   #append parameters of analysis to file
-  cat(paste0("paramCorrMethod: ",paramCorrMethod,"\n"), paste0("paramCorrPAdjust: ",paramCorrPAdjust,"\n"), 
-      paste0("paramGeneSparcityThr: ", paramGeneSparcityThr, "\n"), paste0("dataset: ", dataset.name, "\n"), 
+  cat(paste0("paramCorrMethod: ",paramCorrMethod,"\n"), 
+      paste0("level of significance: ", alpha.level, "\n"),
+      paste0("paramCorrPAdjust: ",paramCorrPAdjust,"\n"), 
+      paste0("paramGeneSparcityThr: ", paramGeneSparcityThr, "\n"), 
+      paste0("dataset: ", dataset.name, "\n"), 
+      paste0("percentage of cells where the selected gene is expressed: ", sel.gene.percent, "\n"),
       paste0("mitoRatio: ", mitoRatio), file=f.path)
   #write the ordered matrix of correlated genes with r coefficients and p values to the designated directory
   suppressWarnings(write.table( cor.res[paste0(selectedGene, "_neg.cor")], f.path, sep=",", append=TRUE, col.names=NA))
