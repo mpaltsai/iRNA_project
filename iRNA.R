@@ -23,9 +23,6 @@ option_list = list(
   #dataset name
   make_option(c("-n", "--dataset.name"), type="character", default=NULL, 
               help="dataset file name", metavar="character"),
-  #output file
-  make_option(c("-o", "--out"), type="character", default="out.txt", 
-              help="output file name [default= %default]", metavar="character"),
   #which mitochondrial threshold was used to filter the count matrix
   make_option(c("-R", "--mitoRatio"), type = "numeric", default = 0.03,
               help = "declare the mitochondrial threshold used to filter the input dataset [default= %default]", metavar = "numeric"),
@@ -341,8 +338,51 @@ for( x in 1:length(genes.incl)){
         message("\n ", names(g.sets[x]), " is empty\n")
         next
       }
-      gost.res <- gost(query= g.sets[x], organism = "mmusculus", domain_scope = "annotated", significant = T, evcodes = TRUE,
-                       sources = c("GO", "KEGG", "REAC", "WP", "MIRNA", "HPA", "CORUM", "HP"))
+      #a helper function to handle errors when calling gost
+      gost_ja <- function(x){
+        tryCatch(
+          expr = {
+            gost.res <<-gost(query= g.sets[x], organism = "mmusculus", domain_scope = "annotated", significant = T, evcodes = TRUE,
+                             sources = c("GO", "KEGG", "REAC", "WP", "MIRNA", "HPA", "CORUM", "HP"))
+            message("Successfully executed the gost call.")
+            
+          },
+          error = function(e){
+            message('Caught an error!')
+            gost.response <<- TRUE
+            print(e)
+          },
+          warning = function(w){
+            message('Caught an warning!')
+            print(w)
+          },
+          finally = {
+            message('\n')
+          }
+          
+        ) 
+        
+      }
+      gost.response <- FALSE
+      gost_ja()
+      b=0
+      while(gost.response==TRUE && b<5) { 
+        
+        gost_ja()
+        
+        
+        
+        Sys.sleep(2)
+        b= b+1
+        if(b==5){
+          message("\nEnrichment analysis failed. Writing results of correlation analysis to an .rds file,
+          to use it at another enrichment only run\n")
+          saveRDS(cor.res, file = file.path(the.path,"cor_res.rds"))
+          stop("Exiting...",call. = FALSE)
+          
+        }
+      }
+      
       if(is.null(gost.res)){
         message("\n gene set for ", names(g.sets[x]), " didn't return results from enrichment analysis\n")
         next
