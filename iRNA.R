@@ -35,7 +35,7 @@ option_list = list(
               other options: kendall, spearman", metavar = "character"),
   #level of significance
   make_option(c("-a", "--alpha"), type = "numeric", default = 0.05,
-              help = "significance level [default= %default]", metavar = "character"),
+              help = "significance level [default= %default]", metavar = "numeric"),
   #a correction method for p values returned from correlation
   make_option(c("-p", "--pAdjustMethod"), type = "character", default = "fdr",
               help = "p value adjustment [default = %default]", metavar = "character"),
@@ -47,7 +47,13 @@ option_list = list(
   make_option(c("-t", "--targetGenes"), type = "character", default = 'Erf',
               help = "define target gene(s) [default = %default]\n
               In case of more than one genes, provide a comma separated list of gene names, without spaces\n
-              e.g. Erf,Sp7,Acaca", metavar = "character")
+              e.g. Erf,Sp7,Acaca", metavar = "character"),
+  #enrichment analysis
+  make_option(c("-e", "--enrichment"), type = "character", default = 'TRUE',
+              help = "run enrichment analysis [default = %default]\n", metavar = "boolean"),
+  #significant gene sets
+  make_option(c("-s", "--signGeneSets"), type = "character", default = 'FALSE',
+              help = "search for significant gene sets [default = %default]\n", metavar = "boolean")
 )
 
 opt_parser = OptionParser(option_list=option_list);
@@ -63,7 +69,7 @@ suppressPackageStartupMessages(library(Seurat))
 suppressPackageStartupMessages(library(Matrix))
 #suppressPackageStartupMessages(library(DESeq2))
 suppressPackageStartupMessages(library(psych))
-suppressPackageStartupMessages(library(gprofiler2))
+#suppressPackageStartupMessages(library(gprofiler2))
 suppressPackageStartupMessages(library(plotly))
 suppressPackageStartupMessages(library(SingleCellExperiment))
 #suppressPackageStartupMessages(library(optparse))
@@ -78,7 +84,8 @@ paramCorrPAdjust    = opt$pAdjustMethod
 paramSeuMinFeatures = 200
 paramGeneSparcityThr= opt$geneSparsity
 alpha.level         = opt$alpha
-
+enrich              = opt$enrichment
+gen.set.sign        = opt$signGeneSets
 
 #read data
 sce <- readRDS(opt$data)
@@ -212,7 +219,7 @@ for( x in 1:length(genes.incl)){
   
   message("\n Running correlation...")
   corr.matrix = suppressWarnings(cor.fun())
-  message("\n Correlation ended")
+  message("\n Correlation completed")
   #keep only those genes where p values are less than 0.05
   corr.sign <- corr.matrix[which(corr.matrix[,2]<0.05),]
   
@@ -285,7 +292,7 @@ for( x in 1:length(genes.incl)){
   cor.res[selectedGene] <- list(corr.ordered)
   cor.res[paste0(selectedGene, "_pos.cor")] <-list(corr.ordered[which(corr.ordered[,"r"]>0), , drop =FALSE])
   cor.res[paste0(selectedGene, "_neg.cor")] <-list(corr.ordered[which(corr.ordered[,"r"]<0), , drop =FALSE])
-  #cor.res[selectedGene]
+
   
   f.path = paste0(outputPath, paste0(selectedGene, "_pos.cor"),"_", mitoRatio,"_", dataset.name,'.csv')
   #append parameters of analysis to file
@@ -311,6 +318,94 @@ for( x in 1:length(genes.incl)){
   #write the ordered matrix of correlated genes with r coefficients and p values to the designated directory
   suppressWarnings(write.table( cor.res[paste0(selectedGene, "_neg.cor")], f.path, sep=",", append=TRUE, col.names=NA))
   
+  #################Enrichment analysis#################
+  
+  if(enrich){
+    
+    message("\n Running enrichment analysis\n")
+    g.sets = lapply(c(cor.res[selectedGene],
+                      cor.res[paste0(selectedGene, "_pos.cor")],
+                      cor.res[paste0(selectedGene, "_neg.cor")]), rownames)
+    
+    library(gprofiler2)
+    #library(plotly)
+    
+    
+    #gost_S198 = readRDS("gost_iRNA_filtered_S198.rds")
+    
+    gost_S198 = list()
+    
+    for (x in 1:length(g.sets)){
+      
+      if(length(g.sets[x][1][[1]])==0){
+        message("\n ", names(g.sets[x]), " is empty\n")
+        next
+      }
+      gost.res <- gost(query= g.sets[x], organism = "mmusculus", domain_scope = "annotated", significant = T, evcodes = TRUE,
+                       sources = c("GO", "KEGG", "REAC", "WP", "MIRNA", "HPA", "CORUM", "HP"))
+      if(is.null(gost.res)){
+        message("\n gene set for ", names(g.sets[x]), " didn't return results from enrichment analysis\n")
+        next
+      }
+      
+      message("\n enrichment analysis for ", names(g.sets[x])," completed successfully\n")
+      gost_S198[names(g.sets[x])] <-list(as.matrix(gost.res$result[,c("p_value","term_id", "source", "term_name", "intersection")]))
+
+      f.path = paste0(outputPath, paste0(names(g.sets[x]),"_", mitoRatio, "_", dataset.name, '_GO.csv'))
+      #append parameters of analysis to file
+      cat(paste0("paramCorrMethod: ",paramCorrMethod,"\n"), 
+          paste0("level of significance: ", alpha.level, "\n"),
+          paste0("paramCorrPAdjust: ",paramCorrPAdjust,"\n"), 
+          paste0("paramGeneSparcityThr: ", paramGeneSparcityThr, "\n"), 
+          paste0("dataset: ", dataset.name, "\n"), 
+          paste0("percentage of cells where the selected gene is expressed: ", sel.gene.percent, "\n"),
+          paste0("mitoRatio: ", mitoRatio), file=f.path)
+      
+      #write enrichment analysis results
+      #write.csv(gost_S198[genes.incl[x]], 
+      #paste0(file.path(getwd(), outputPath), paste0(genes.incl[x],'_GO.csv')), row.names=FALSE)
+      message("\n Writing results to file\n")
+      suppressWarnings(write.table(gost_S198[names(g.sets[x])], f.path, sep=",", append=TRUE, col.names=NA))
+      
+    }
+  }
+  #################Search for significant gene sets#################
+  if(gen.set.sign){
+    message("\n Loading gene lists to compare with\n")
+    
+    #####getting an error:
+    #Error in header + nrows : non-numeric argument to binary operator
+   # Calls: sapply -> read.csv -> read.table
+    #Execution halted
+    
+    #read frog file and call it genes_OldProt
+    genes_OldProt <- read.csv("./input_data/Frog_Clusters.csv", sep=",", header = T)
+    dim_genes_OldProt <- dim(genes_OldProt)
+    genes_OldProt <- apply(genes_OldProt, 2, toupper)
+    genes_OldProt <- as.data.frame(genes_OldProt)
+    
+    #New_Targets.csv: read the 2 first rows as header and call it genes_batch
+    header2 <- sapply(read.csv("./input_data/New_Targets.csv", header=F, sep=",", 
+                               check.names=FALSE, nrow=2) , paste, collapse="_")
+    
+    genes_batch <- read.csv("./input_data/New_Targets.csv", sep=",", header = F,
+                            check.names=FALSE, skip=2, col.names=header2)
+    dim_genes_batch <- dim(genes_batch)
+    genes_batch <- apply(genes_batch, 2, toupper)
+    genes_batch <- as.data.frame(genes_batch)
+    
+    #ChIPseq_genes.csv: read the 2 first rows as header and call it genes_oldVSall
+    header3 <- sapply(read.csv("./input_data/ChIPseq_genes.csv", header=F, sep=",", 
+                               check.names=FALSE, nrow=2) , paste, collapse="_")
+    
+    genes_oldVSall <- read.csv("./input_data/ChIPseq_genes.csv", sep=",", header = F,
+                               check.names=FALSE, skip=2, col.names=header3)
+    dim_genes_OldVSall <- dim(genes_oldVSall)
+    print( dim(genes_oldVSall))
+    genes_oldVSall <- apply(genes_oldVSall, 2, toupper)
+    genes_oldVSall <- as.data.frame(genes_oldVSall)
+    
+  }
   
 }
 end.cor.time = Sys.time()
