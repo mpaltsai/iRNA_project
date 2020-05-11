@@ -2,18 +2,22 @@
 #initialize packrat
 #packrat::init()
 
-#install related packages
-#install.packages(c("stats", "Seurat", "Matrix", "psych", "gprofiler2", "plotly"))
-#install.packages("optparse")
-#if (!requireNamespace("BiocManager", quietly = TRUE))
-#  install.packages("BiocManager")
+#install related packages if not installed yet
 
-#BiocManager::install("SingleCellExperiment")
-#take a snapshot 
-#packrat::snapshot()
+message('\nloading libraries, please wait')
 
-#clean working environment
-#rm(list=ls())
+relatedPackages = c("stats", "Seurat", "Matrix", "psych", "gprofiler2", "optparse")
+for(p in relatedPackages){
+  if(!require(p,character.only = TRUE, quietly = TRUE)) 
+    suppressMessages(install.packages(p))
+}
+if (!requireNamespace("BiocManager", quietly = TRUE))
+  suppressMessages(install.packages("BiocManager", quietly = TRUE))
+
+if(!require("SingleCellExperiment", character.only = TRUE, quietly = TRUE))
+ suppressMessages(BiocManager::install("SingleCellExperiment", quietly = TRUE))
+
+
 suppressPackageStartupMessages(library(optparse))
 #arguments list
 option_list = list(
@@ -30,6 +34,8 @@ option_list = list(
   make_option(c("-m", "--method"), type = "character", default = "pearson",
               help = "correlation method [default= %default]\n 
               other options: kendall, spearman", metavar = "character"),
+  make_option(c("-r", "--correlation_threshold"), type = "numeric", default = 0.1,
+               help = "define a minimum correlation level [default = %default]", metavar = "numeric"),
   #level of significance
   make_option(c("-a", "--alpha"), type = "numeric", default = 0.05,
               help = "significance level [default= %default]", metavar = "numeric"),
@@ -48,6 +54,14 @@ option_list = list(
   #enrichment analysis
   make_option(c("-e", "--enrichment"), type = "character", default = 'TRUE',
               help = "run enrichment analysis [default = %default]\n", metavar = "boolean"),
+  #enrichment only run
+  make_option(c("-o", "--only_enrichment"), type ="character", default = NULL,
+              help = "an enrichment only run, if a previous enrichment analysis has failed 
+              and a cor_res.rds file is available [default = %default]\n
+              In this case, please provide the full path for cor_res.rds 
+              e.g ~/<directory iRNA is running>/results/<timestamp>/cor_res.rds\n
+              Note that you still have to provide additional information on parameters to be written on .csv file
+              (-n, -R, -m etc.). If skipped, no such information will be included", metavar = "character"),
   #significant gene sets
   make_option(c("-s", "--signGeneSets"), type = "character", default = 'FALSE',
               help = "search for significant gene sets [default = %default]\n", metavar = "boolean")
@@ -56,20 +70,15 @@ option_list = list(
 opt_parser = OptionParser(option_list=option_list);
 opt = parse_args(opt_parser);
 
-message('\nloading libraries, please wait')
+
 #load packages
-#suppressPackageStartupMessages(library(shiny))
-#suppressPackageStartupMessages(library(RColorBrewer))
 suppressPackageStartupMessages(library(stats))
-#suppressPackageStartupMessages(library(matrixStats))
 suppressPackageStartupMessages(library(Seurat))
 suppressPackageStartupMessages(library(Matrix))
-#suppressPackageStartupMessages(library(DESeq2))
 suppressPackageStartupMessages(library(psych))
-#suppressPackageStartupMessages(library(gprofiler2))
 suppressPackageStartupMessages(library(plotly))
 suppressPackageStartupMessages(library(SingleCellExperiment))
-#suppressPackageStartupMessages(library(optparse))
+
 message("libraries loaded\n")
 
 
@@ -83,6 +92,120 @@ paramGeneSparcityThr= opt$geneSparsity
 alpha.level         = opt$alpha
 enrich              = opt$enrichment
 gen.set.sign        = opt$signGeneSets
+enrich.only         = opt$only_enrichment
+c.r                   = opt$correlation_threshold
+
+#an enrichment only run
+if(!is.null(enrich.only)){
+
+  message("\n Reading data...\n")
+  cor.res = readRDS(enrich.only)
+  output.path = gsub("(.*)[/].*", "\\1", enrich.only)
+
+  
+  library(gprofiler2)
+  
+  message("\n Running enrichment analysis\n")
+  
+  #Read cor.res by 3 to follow the routine of enrichment analysis using the selectedGene variable
+  for (i in seq(1, length(cor.res), by=3)){
+      
+    selectedGene = names(cor.res[i])
+    message("\n------Working on ", selectedGene, "------\n")
+
+    g.sets = lapply(c(cor.res[selectedGene],
+                      cor.res[paste0(selectedGene, "_pos.cor")],
+                      cor.res[paste0(selectedGene, "_neg.cor")]), rownames)
+
+    #gost_S198 = readRDS("gost_iRNA_filtered_S198.rds")
+    
+    gost_S198 = list()
+    
+    for (x in 1:length(g.sets)){
+      
+      if(length(g.sets[x][1][[1]])==0){
+        message("\n ", names(g.sets[x]), " is empty\n")
+        next
+      }
+      message("\n Awaiting a response from server...\n")
+      #a helper function to handle errors when calling gost
+      gost_ja <- function(x){
+        tryCatch(
+          expr = {
+            gost.res <<-gost(query= g.sets[x], organism = "mmusculus", domain_scope = "annotated", significant = T, evcodes = TRUE,
+                             sources = c("GO", "KEGG", "REAC", "WP", "MIRNA", "HPA", "CORUM", "HP"))
+            message("Successfully executed the gost call.")
+            
+          },
+          error = function(e){
+            message('Error:')
+            gost.response <<- TRUE
+            
+            message(e$message)
+          },
+          warning = function(w){
+            message('Warning:')
+            message(w)
+          },
+          finally = {
+            message('\n')
+          }
+          
+        ) 
+        
+      }
+      gost.response <- FALSE
+      gost_ja()
+      b=0
+      while(gost.response==TRUE && b<5) { 
+        
+        gost_ja()
+        
+        
+        
+        Sys.sleep(2)
+        b= b+1
+        if(b==5){
+          message("\nEnrichment analysis failed. Writing results of correlation analysis to an .rds file,
+              to use it at another enrichment only run\n")
+          saveRDS(cor.res, file = file.path(the.path,"cor_res.rds"))
+          stop("Exiting...",call. = FALSE)
+          
+        }
+      }
+      
+      if(is.null(gost.res)){
+        message("\n gene set for ", names(g.sets[x]), " didn't return results from enrichment analysis\n")
+        next
+      }
+      
+      message("\n enrichment analysis for ", names(g.sets[x])," completed successfully\n")
+      gost_S198[names(g.sets[x])] <-list(as.matrix(gost.res$result[,c("p_value","term_id", "source", "term_name", "intersection")]))
+      
+      outputPath          = paste0(output.path,'/', selectedGene, '/')
+      f.path = paste0(outputPath, paste0(names(g.sets[x]),"_", mitoRatio, "_", dataset.name, '_GO.csv'))
+      #append parameters of analysis to file
+      cat(paste0("paramCorrMethod: ",paramCorrMethod,"\n"), 
+          paste0("correlation level: ", c.r, "\n"),
+          paste0("level of significance: ", alpha.level, "\n"),
+          paste0("paramCorrPAdjust: ",paramCorrPAdjust,"\n"), 
+          paste0("paramGeneSparcityThr: ", paramGeneSparcityThr, "\n"), 
+          paste0("dataset: ", dataset.name, "\n"), 
+          #paste0("percentage of cells where the selected gene is expressed: ", sel.gene.percent, "\n"),
+          paste0("mitoRatio: ", mitoRatio), file=f.path)
+      #write enrichment analysis results
+      #write.csv(gost_S198[genes.incl[x]], 
+      #paste0(file.path(getwd(), outputPath), paste0(genes.incl[x],'_GO.csv')), row.names=FALSE)
+      message("\n Writing results to file\n")
+      suppressWarnings(write.table(gost_S198[names(g.sets[x])], f.path, sep=",", append=TRUE, col.names=NA))
+      #wait a second before calling again gost
+      Sys.sleep(1)
+    } 
+     
+      
+  } 
+  stop("\r Enrichment analysis completed")
+}
 
 #read data
 sce <- readRDS(opt$data)
@@ -259,8 +382,8 @@ for( x in 1:length(genes.incl)){
   #order the list by the r coefficient
   corr.ordered <- corr.sign.genes[order(abs(as.numeric(corr.sign.genes[,1])),decreasing = TRUE),]
   
-  #keep genes with r>0.1
-  corr.ordered <- corr.ordered[which(abs(as.numeric(corr.ordered[,1]))>0.1),]
+  #keep genes with r> c.r
+  corr.ordered <- corr.ordered[which(abs(as.numeric(corr.ordered[,1]))>c.r),]
 
   message("\n Writing results to files")
   
@@ -274,6 +397,7 @@ for( x in 1:length(genes.incl)){
   
   #append parameters of analysis to file
   cat(paste0("paramCorrMethod: ",paramCorrMethod,"\n"), 
+      paste0("correlation level: ", c.r, "\n"),
       paste0("level of significance: ", alpha.level, "\n"),
       paste0("paramCorrPAdjust: ",paramCorrPAdjust,"\n"), 
       paste0("paramGeneSparcityThr: ", paramGeneSparcityThr, "\n"), 
@@ -294,6 +418,7 @@ for( x in 1:length(genes.incl)){
   f.path = paste0(outputPath, paste0(selectedGene, "_pos.cor"),"_", mitoRatio,"_", dataset.name,'.csv')
   #append parameters of analysis to file
   cat(paste0("paramCorrMethod: ",paramCorrMethod,"\n"), 
+      paste0("correlation level: ", c.r, "\n"),
       paste0("level of significance: ", alpha.level, "\n"),
       paste0("paramCorrPAdjust: ",paramCorrPAdjust,"\n"), 
       paste0("paramGeneSparcityThr: ", paramGeneSparcityThr, "\n"), 
@@ -306,6 +431,7 @@ for( x in 1:length(genes.incl)){
   f.path = paste0(outputPath, paste0(selectedGene, "_neg.cor"),"_", mitoRatio,"_", dataset.name,'.csv')
   #append parameters of analysis to file
   cat(paste0("paramCorrMethod: ",paramCorrMethod,"\n"), 
+      paste0("correlation level: ", c.r, "\n"),
       paste0("level of significance: ", alpha.level, "\n"),
       paste0("paramCorrPAdjust: ",paramCorrPAdjust,"\n"), 
       paste0("paramGeneSparcityThr: ", paramGeneSparcityThr, "\n"), 
@@ -342,19 +468,20 @@ for( x in 1:length(genes.incl)){
       gost_ja <- function(x){
         tryCatch(
           expr = {
-            gost.res <<-gost(query= g.sets[x], organism = "mmusculus", domain_scope = "annotated", significant = T, evcodes = TRUE,
+            gost.res <<-gost(query= "ERF", organism = "mmusculus", domain_scope = "annotated", significant = T, evcodes = TRUE,
                              sources = c("GO", "KEGG", "REAC", "WP", "MIRNA", "HPA", "CORUM", "HP"))
             message("Successfully executed the gost call.")
             
           },
           error = function(e){
-            message('Caught an error!')
+            message('Error:')
             gost.response <<- TRUE
-            print(e)
+            
+            message(e$message)
           },
           warning = function(w){
-            message('Caught an warning!')
-            print(w)
+            message('Warning:')
+            message(w)
           },
           finally = {
             message('\n')
@@ -394,19 +521,20 @@ for( x in 1:length(genes.incl)){
       f.path = paste0(outputPath, paste0(names(g.sets[x]),"_", mitoRatio, "_", dataset.name, '_GO.csv'))
       #append parameters of analysis to file
       cat(paste0("paramCorrMethod: ",paramCorrMethod,"\n"), 
+          paste0("correlation level: ", c.r, "\n"),
           paste0("level of significance: ", alpha.level, "\n"),
           paste0("paramCorrPAdjust: ",paramCorrPAdjust,"\n"), 
           paste0("paramGeneSparcityThr: ", paramGeneSparcityThr, "\n"), 
           paste0("dataset: ", dataset.name, "\n"), 
           paste0("percentage of cells where the selected gene is expressed: ", sel.gene.percent, "\n"),
           paste0("mitoRatio: ", mitoRatio), file=f.path)
-      
       #write enrichment analysis results
       #write.csv(gost_S198[genes.incl[x]], 
       #paste0(file.path(getwd(), outputPath), paste0(genes.incl[x],'_GO.csv')), row.names=FALSE)
       message("\n Writing results to file\n")
       suppressWarnings(write.table(gost_S198[names(g.sets[x])], f.path, sep=",", append=TRUE, col.names=NA))
-      
+      #wait a second before calling again gost
+      Sys.sleep(1)
     }
   }
   #################Search for significant gene sets#################
