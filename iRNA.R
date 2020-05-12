@@ -1,11 +1,11 @@
 #!/usr/bin/env Rscript
 #initialize packrat
 #packrat::init()
+#packrat::snapshot()
 
 #install related packages if not installed yet
 
-message('\nloading libraries, please wait')
-
+if(FALSE){
 relatedPackages = c("stats", "Seurat", "Matrix", "psych", "gprofiler2", "optparse")
 for(p in relatedPackages){
   if(!require(p,character.only = TRUE, quietly = TRUE)) 
@@ -16,7 +16,7 @@ if (!requireNamespace("BiocManager", quietly = TRUE))
 
 if(!require("SingleCellExperiment", character.only = TRUE, quietly = TRUE))
  suppressMessages(BiocManager::install("SingleCellExperiment", quietly = TRUE))
-
+}
 
 suppressPackageStartupMessages(library(optparse))
 #arguments list
@@ -32,8 +32,7 @@ option_list = list(
               help = "declare the mitochondrial threshold used to filter the input dataset [default= %default]", metavar = "numeric"),
   #a method to run correlation
   make_option(c("-m", "--method"), type = "character", default = "pearson",
-              help = "correlation method [default= %default]\n 
-              other options: kendall, spearman", metavar = "character"),
+              help = "correlation method [default= %default] Other options: kendall, spearman", metavar = "character"),
   make_option(c("-r", "--correlation_threshold"), type = "numeric", default = 0.1,
                help = "define a minimum correlation level [default = %default]", metavar = "numeric"),
   #level of significance
@@ -49,8 +48,7 @@ option_list = list(
   #gene(s) to run the analysis over
   make_option(c("-t", "--targetGenes"), type = "character", default = 'Erf',
               help = "define target gene(s) [default = %default]\n
-              In case of more than one genes, provide a comma separated list of gene names, without spaces\n
-              e.g. Erf,Sp7,Acaca", metavar = "character"),
+              In case of more than one genes, provide a comma separated list of gene names, without spaces e.g. Erf,Sp7,Acaca", metavar = "character"),
   #enrichment analysis
   make_option(c("-e", "--enrichment"), type = "character", default = 'TRUE',
               help = "run enrichment analysis [default = %default]\n", metavar = "boolean"),
@@ -59,12 +57,11 @@ option_list = list(
               help = "an enrichment only run, if a previous enrichment analysis has failed 
               and a cor_res.rds file is available [default = %default]\n
               In this case, please provide the full path for cor_res.rds 
-              e.g ~/<directory iRNA is running>/results/<timestamp>/cor_res.rds\n
-              Note that you still have to provide additional information on parameters to be written on .csv file
+              e.g ~/<directory iRNA is running>/results/<timestamp>/cor_res.rds Note that you still have to provide additional information on parameters to be written on .csv file
               (-n, -R, -m etc.). If skipped, no such information will be included", metavar = "character"),
   #significant gene sets
   make_option(c("-s", "--signGeneSets"), type = "character", default = 'FALSE',
-              help = "search for significant gene sets [default = %default]\n", metavar = "boolean")
+              help = "search for significant gene sets [default = %default]", metavar = "boolean")
 )
 
 opt_parser = OptionParser(option_list=option_list);
@@ -72,6 +69,8 @@ opt = parse_args(opt_parser);
 
 
 #load packages
+
+message('\nloading libraries, please wait')
 suppressPackageStartupMessages(library(stats))
 suppressPackageStartupMessages(library(Seurat))
 suppressPackageStartupMessages(library(Matrix))
@@ -83,17 +82,17 @@ message("libraries loaded\n")
 
 
 #set parameters
-dataset.name        = opt$dataset.name
-mitoRatio           = opt$mitoRatio
-paramCorrMethod     = opt$method
+dataset.name        = opt$dataset.name 
+mitoRatio           = opt$mitoRatio 
+paramCorrMethod     = opt$method 
 paramCorrPAdjust    = opt$pAdjustMethod   
 paramSeuMinFeatures = 200
-paramGeneSparcityThr= opt$geneSparsity
-alpha.level         = opt$alpha
+paramGeneSparcityThr= opt$geneSparsity 
+alpha.level         = opt$alpha 
 enrich              = opt$enrichment
 gen.set.sign        = opt$signGeneSets
 enrich.only         = opt$only_enrichment
-c.r                   = opt$correlation_threshold
+c.r                 = opt$correlation_threshold 
 
 #an enrichment only run
 if(!is.null(enrich.only)){
@@ -324,7 +323,7 @@ for( x in 1:length(genes.incl)){
     colnames(corr.matrix) <- c("r", "p_r", "p_w", "percentage in Ea", "percentage in Eb")
     
     for(j in 1:nrow(F)){
-      
+     
       #run the correlation test
       corr.output =  corr.test(as.numeric(Eb.t), as.numeric(F.t[,j]), method = paramCorrMethod, 
                                adjust = paramCorrPAdjust, alpha = alpha.level, ci = FALSE )
@@ -340,13 +339,15 @@ for( x in 1:length(genes.incl)){
   message("\n Running correlation...")
   corr.matrix = suppressWarnings(cor.fun())
   message("\n Correlation completed")
-  #keep only those genes where p values are less than 0.05
-  corr.sign <- corr.matrix[which(corr.matrix[,2]<0.05),]
-  
+  #keep only those genes where p values are less than alpha.level = 0.05 c.r = 0.1
+  corr.sign <- corr.matrix[which(corr.matrix[,2]<alpha.level & abs(as.numeric(corr.matrix[,1]))>c.r), ,drop = FALSE ]
+  if(length(corr.sign)==0)
+    stop("None correlated gene returned with a < ", alpha.level, " and r > ", c.r)
   ####check whether the distibution of expression of each correlated gene in cells 
   ####where the selected gene is expressed or not is the same 
   
   ###run a Wilcoxon test###
+
   message("\n Running a Wilcoxon test...")
   for(i in 1:nrow(corr.sign)){
     
@@ -369,21 +370,25 @@ for( x in 1:length(genes.incl)){
     corr.sign[i,5] = percent.Eb
     
     #run the test
-    p.value.wtest = wilcox.test(x.set,y.set)$p.value
-    
+    p.value.wtest = wilcox.test(x.set,y.set, conf.int = FALSE)$p.value
+
     #append the p value to the corr.sign matrix
     corr.sign[i,3] = p.value.wtest
     
   }
-  message("\n Wilcoxon test run completed")
-  #again keep only those genes where p values are less than 0.05
-  corr.sign.genes <- corr.sign[which(corr.sign[,3]<0.05),]
+
   
+  message("\n Wilcoxon test run completed")
+  
+  #again keep only those genes where p values are less than alpha.level
+  corr.sign.genes <- corr.sign[which(corr.sign[,3]<alpha.level), , drop = FALSE]
+  if(length(corr.sign.genes)==0)
+    stop("None correlated gene returned with a < ", alpha.level)
   #order the list by the r coefficient
   corr.ordered <- corr.sign.genes[order(abs(as.numeric(corr.sign.genes[,1])),decreasing = TRUE),]
   
   #keep genes with r> c.r
-  corr.ordered <- corr.ordered[which(abs(as.numeric(corr.ordered[,1]))>c.r),]
+  corr.ordered <- corr.ordered[which(abs(as.numeric(corr.ordered[,1]))>c.r), , drop = FALSE]
 
   message("\n Writing results to files")
   
@@ -578,6 +583,6 @@ for( x in 1:length(genes.incl)){
 }
 end.cor.time = Sys.time()
 
-message("\n End of correlation analysis \n ")
+message("\n End of analysis \n ")
 end.cor.time - start.cor.time
 
