@@ -201,9 +201,13 @@ if(!is.null(enrich.only)){
       
   } 
   stop("\r Enrichment analysis completed")
+  unlink(enrich.only)
+  quit(save = "no")
 }
 
 ######################### Main routine ###############################
+start.analysis = Sys.time()
+
 #read data
 sce <- readRDS(opt$data)
 paramSeuMinCells    = paramGeneSparcityThr*dim(sce)[2]
@@ -453,6 +457,8 @@ for( x in 1:length(genes.incl)){
 }
 end.cor.time = Sys.time()
 
+message("\n Correlation analysis duration: \n")
+end.cor.time - start.cor.time
 
   #################Enrichment analysis#################
 
@@ -559,6 +565,12 @@ if(enrich){
       Sys.sleep(1)
     }
   }
+  end.enrich.time = Sys.time()
+  message("\n Enrichment analysis completed \n")
+  message("\n Enrichment analysis duration: \n")
+  end.enrich.time - start.enrich.time
+}
+  
   #################Search for significant gene sets#################
   if(gen.set.sign){
     message("\n Loading gene lists to compare with\n")
@@ -596,10 +608,12 @@ if(enrich){
     genes_oldVSall <- as.data.frame(genes_oldVSall)
     
   }
-  
-}
+end.analysis = Sys.time()  
 
+message("\n All done! \n ")
+message("\n Duration of analysis: \n ")
+end.analysis - start.analysis
 
-message("\n End of analysis \n ")
-end.cor.time - start.cor.time
+quit(save = "no")
+
 
