@@ -399,12 +399,12 @@ for( x in 1:length(genes.incl)){
   
   #Writing results to files
   outputPath          = paste0(the.path,'/', selectedGene, '/')
-  print(outputPath)
+  
   #check if the directory exists and if not create it
   ifelse(!dir.exists(outputPath), dir.create(outputPath), FALSE)
   
   f.path = paste0(outputPath, paste0(selectedGene,"_", mitoRatio,"_", dataset.name,'.csv'))
-  print(f.path)
+  
   #append parameters of analysis to file
   cat(paste0("paramCorrMethod: ",paramCorrMethod,"\n"), 
       paste0("correlation level: ", c.r, "\n"),
@@ -479,6 +479,7 @@ if(enrich){
     
     for (x in 1:length(g.sets)){
       
+      message("\n  --Working on ", names(g.sets[x]), "--")
       if(length(g.sets[x][1][[1]])==0){
         message("\n ", names(g.sets[x]), " is empty\n")
         next
