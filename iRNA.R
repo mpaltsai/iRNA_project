@@ -133,7 +133,7 @@ if(!is.null(enrich.only)){
           expr = {
             gost.res <<-gost(query= g.sets[x], organism = "mmusculus", domain_scope = "annotated", significant = T, evcodes = TRUE,
                              sources = c("GO", "KEGG", "REAC", "WP", "MIRNA", "HPA", "CORUM", "HP"))
-            message("Successfully executed the gost call.")
+            message("Successfully executed server call.")
             
           },
           error = function(e){
@@ -159,15 +159,12 @@ if(!is.null(enrich.only)){
       while(gost.response==TRUE && b<5) { 
         
         gost_ja()
-        
-        
-        
+
         Sys.sleep(2)
         b= b+1
+        
         if(b==5){
-          message("\nEnrichment analysis failed. Writing results of correlation analysis to an .rds file,
-              to use it at another enrichment only run\n")
-          saveRDS(cor.res, file = file.path(the.path,"cor_res.rds"))
+          message("\nEnrichment analysis failed. \n")
           stop("Exiting...",call. = FALSE)
           
         }
@@ -206,11 +203,12 @@ if(!is.null(enrich.only)){
   stop("\r Enrichment analysis completed")
 }
 
+######################### Main routine ###############################
 #read data
 sce <- readRDS(opt$data)
 paramSeuMinCells    = paramGeneSparcityThr*dim(sce)[2]
 
-#creaye a seurat object to work with
+#create a seurat object to work with
 seurat                 = CreateSeuratObject(counts = sce@assays@data@listData$counts, project = "craniosynostosis", min.cells = paramSeuMinCells)
 
 #discard genes that are not detected in any cell
@@ -259,6 +257,7 @@ message(" ",the.path )
 
 start.cor.time = Sys.time()
 
+####################### Correlation & Wilcoxon tests ################################3
 for( x in 1:length(genes.incl)){
   
   selectedGene         = genes.incl[x]
@@ -341,8 +340,11 @@ for( x in 1:length(genes.incl)){
   message("\n Correlation completed")
   #keep only those genes where p values are less than alpha.level = 0.05 c.r = 0.1
   corr.sign <- corr.matrix[which(corr.matrix[,2]<alpha.level & abs(as.numeric(corr.matrix[,1]))>c.r), ,drop = FALSE ]
-  if(length(corr.sign)==0)
-    stop("None correlated gene returned with a < ", alpha.level, " and r > ", c.r)
+
+  if(length(corr.sign)==0){
+    message("None correlated gene returned with a < ", alpha.level, " and r > ", c.r)
+    next
+    }
   ####check whether the distibution of expression of each correlated gene in cells 
   ####where the selected gene is expressed or not is the same 
   
@@ -381,9 +383,12 @@ for( x in 1:length(genes.incl)){
   message("\n Wilcoxon test run completed")
   
   #again keep only those genes where p values are less than alpha.level
-  corr.sign.genes <- corr.sign[which(corr.sign[,3]<alpha.level), , drop = FALSE]
-  if(length(corr.sign.genes)==0)
-    stop("None correlated gene returned with a < ", alpha.level)
+  corr.sign.genes <- corr.sign[which(corr.sign[,3]<0.05), , drop = FALSE]
+  
+  if(length(corr.sign.genes)==0){
+    message("None correlated gene returned with p value < 0.05")
+    next
+    }
   #order the list by the r coefficient
   corr.ordered <- corr.sign.genes[order(abs(as.numeric(corr.sign.genes[,1])),decreasing = TRUE),]
   
@@ -394,12 +399,12 @@ for( x in 1:length(genes.incl)){
   
   #Writing results to files
   outputPath          = paste0(the.path,'/', selectedGene, '/')
- 
+  print(outputPath)
   #check if the directory exists and if not create it
   ifelse(!dir.exists(outputPath), dir.create(outputPath), FALSE)
   
   f.path = paste0(outputPath, paste0(selectedGene,"_", mitoRatio,"_", dataset.name,'.csv'))
-  
+  print(f.path)
   #append parameters of analysis to file
   cat(paste0("paramCorrMethod: ",paramCorrMethod,"\n"), 
       paste0("correlation level: ", c.r, "\n"),
@@ -418,7 +423,7 @@ for( x in 1:length(genes.incl)){
   cor.res[selectedGene] <- list(corr.ordered)
   cor.res[paste0(selectedGene, "_pos.cor")] <-list(corr.ordered[which(corr.ordered[,"r"]>0), , drop =FALSE])
   cor.res[paste0(selectedGene, "_neg.cor")] <-list(corr.ordered[which(corr.ordered[,"r"]<0), , drop =FALSE])
-
+  #print(cor.res)
   
   f.path = paste0(outputPath, paste0(selectedGene, "_pos.cor"),"_", mitoRatio,"_", dataset.name,'.csv')
   #append parameters of analysis to file
@@ -445,12 +450,21 @@ for( x in 1:length(genes.incl)){
       paste0("mitoRatio: ", mitoRatio), file=f.path)
   #write the ordered matrix of correlated genes with r coefficients and p values to the designated directory
   suppressWarnings(write.table( cor.res[paste0(selectedGene, "_neg.cor")], f.path, sep=",", append=TRUE, col.names=NA))
-  
+}
+end.cor.time = Sys.time()
+
+
   #################Enrichment analysis#################
+
+if(enrich){
+  start.enrich.time = Sys.time()
+  message("\n Running enrichment analysis\n")
   
-  if(enrich){
+  for( x in 1:length(genes.incl)){
     
-    message("\n Running enrichment analysis\n")
+    selectedGene         = genes.incl[x]
+    message("\n ------Working on ", selectedGene, "------")
+
     g.sets = lapply(c(cor.res[selectedGene],
                       cor.res[paste0(selectedGene, "_pos.cor")],
                       cor.res[paste0(selectedGene, "_neg.cor")]), rownames)
@@ -473,7 +487,7 @@ for( x in 1:length(genes.incl)){
       gost_ja <- function(x){
         tryCatch(
           expr = {
-            gost.res <<-gost(query= "ERF", organism = "mmusculus", domain_scope = "annotated", significant = T, evcodes = TRUE,
+            gost.res <<-gost(query= g.sets[x], organism = "mmusculus", domain_scope = "annotated", significant = T, evcodes = TRUE,
                              sources = c("GO", "KEGG", "REAC", "WP", "MIRNA", "HPA", "CORUM", "HP"))
             message("Successfully executed the gost call.")
             
@@ -522,7 +536,9 @@ for( x in 1:length(genes.incl)){
       
       message("\n enrichment analysis for ", names(g.sets[x])," completed successfully\n")
       gost_S198[names(g.sets[x])] <-list(as.matrix(gost.res$result[,c("p_value","term_id", "source", "term_name", "intersection")]))
-
+      
+      #Writing results to files
+      outputPath          = paste0(the.path,'/', selectedGene, '/')
       f.path = paste0(outputPath, paste0(names(g.sets[x]),"_", mitoRatio, "_", dataset.name, '_GO.csv'))
       #append parameters of analysis to file
       cat(paste0("paramCorrMethod: ",paramCorrMethod,"\n"), 
@@ -581,7 +597,7 @@ for( x in 1:length(genes.incl)){
   }
   
 }
-end.cor.time = Sys.time()
+
 
 message("\n End of analysis \n ")
 end.cor.time - start.cor.time
