@@ -28,8 +28,8 @@ option_list = list(
   make_option(c("-n", "--dataset.name"), type="character", default=NULL, 
               help="dataset file name", metavar="character"),
   #which mitochondrial threshold was used to filter the count matrix
-  make_option(c("-R", "--mitoRatio"), type = "numeric", default = 0.03,
-              help = "declare the mitochondrial threshold used to filter the input dataset [default= %default]", metavar = "numeric"),
+  make_option(c("-R", "--mitoRatio"), type = "character", default = 0.03,
+              help = "declare the mitochondrial threshold used to filter the input dataset [default= %default]", metavar = "character"),
   #a method to run correlation
   make_option(c("-m", "--method"), type = "character", default = "pearson",
               help = "correlation method [default= %default] Other options: kendall, spearman", metavar = "character"),
@@ -66,7 +66,6 @@ option_list = list(
 
 opt_parser = OptionParser(option_list=option_list);
 opt = parse_args(opt_parser);
-
 
 
 #load packages
@@ -202,16 +201,11 @@ if(!is.null(enrich.only)){
       
   } 
   stop("\r Enrichment analysis completed")
-  unlink(enrich.only)
-  quit(save = "no")
 }
 
 ######################### Main routine ###############################
-start.analysis = Sys.time()
-
 #read data
 sce <- readRDS(opt$data)
-
 paramSeuMinCells    = paramGeneSparcityThr*dim(sce)[2]
 
 #create a seurat object to work with
@@ -273,7 +267,7 @@ for( x in 1:length(genes.incl)){
   
   #in case a target gene is not included in the assay (or after the subsetting of the matrix)
   if(length(refRowIndex)==0){ 
-  message("\n ERROR: the selected gene ", selectedGene, " is not included in the filtered dataset\n Proceeding to the next gene")
+  message("\n ERROR: the selected gene ", selectedGene, " is not included in the RNA-seq assay\n Proceeding to the next gene")
   next
   }
   
@@ -290,7 +284,7 @@ for( x in 1:length(genes.incl)){
   #this variable is needed to go to the next iteration if becomes TRUE
   skip_to_next <- FALSE
   
-  Ea <- tryCatch( div[,which(div[["RNA"]]@data[1,]==0)], error = function(e) { 
+  check.it <- tryCatch( div[,which(div[["RNA"]]@data[1,]==0)], error = function(e) { 
     
     e
     genes.xcl <<- c(genes.xcl, selectedGene)
@@ -302,8 +296,7 @@ for( x in 1:length(genes.incl)){
   if(skip_to_next) { next }
   
   #if everything is fine continue with Ea
-  #Ea = div[,which(div[["RNA"]]@data[1,]==0)]
-  Ea = seurat.sub.nonzero[,colnames(Ea)]
+  Ea = div[,which(div[["RNA"]]@data[1,]==0)]
   
   #Eb holds the cells where the selected gene is expressed
   Eb = div[, which(div[["RNA"]]@data[1,]>0)]
@@ -359,12 +352,11 @@ for( x in 1:length(genes.incl)){
 
   message("\n Running a Wilcoxon test...")
   for(i in 1:nrow(corr.sign)){
-  
+    
     #define the subsets of the data to include expression values for the correlated genes 
     
     #in cells where the selected gene is not expressed
-    #x.set = as.numeric(seurat.sub.nonzero[["RNA"]]@data[rownames(corr.sign)[i], colnames(Ea)])
-    x.set = as.numeric(Ea[["RNA"]]@data[rownames(corr.sign)[i], ])
+    x.set = as.numeric(seurat.sub.nonzero[["RNA"]]@data[rownames(corr.sign)[i], colnames(Ea)])
     
     #the percentage of cells in Ea the selected gene is expressed
     percent.Ea = length(x.set[which(x.set>0)])/length(x.set)
@@ -372,8 +364,8 @@ for( x in 1:length(genes.incl)){
     corr.sign[i,4] = percent.Ea
     
     #where the selected gene is expressed
-    #y.set = as.numeric(seurat.sub.nonzero[["RNA"]]@data[rownames(corr.sign)[i], colnames(Eb)])
-    y.set = as.numeric(F[["RNA"]]@data[rownames(corr.sign)[i], ])
+    y.set = as.numeric(seurat.sub.nonzero[["RNA"]]@data[rownames(corr.sign)[i], colnames(Eb)])
+    
     #the percentage of cells in Eb the selected gene is expressed
     percent.Eb= length(y.set[which(y.set>0)])/length(y.set)
     #append it to corr.sign
@@ -390,7 +382,7 @@ for( x in 1:length(genes.incl)){
   
   message("\n Wilcoxon test run completed")
   
-  #again keep only those genes where p values are less than 0.05
+  #again keep only those genes where p values are less than alpha.level
   corr.sign.genes <- corr.sign[which(corr.sign[,3]<0.05), , drop = FALSE]
   
   if(length(corr.sign.genes)==0){
@@ -398,7 +390,7 @@ for( x in 1:length(genes.incl)){
     next
     }
   #order the list by the r coefficient
-  corr.ordered <- corr.sign.genes[order(abs(as.numeric(corr.sign.genes[,1])),decreasing = TRUE),]
+  corr.ordered <- corr.sign.genes[order(abs(as.numeric(corr.sign.genes[,1])),decreasing = TRUE), ,drop = FALSE ]
   
   #keep genes with r> c.r
   corr.ordered <- corr.ordered[which(abs(as.numeric(corr.ordered[,1]))>c.r), , drop = FALSE]
@@ -461,8 +453,6 @@ for( x in 1:length(genes.incl)){
 }
 end.cor.time = Sys.time()
 
-message("\n Correlation analysis duration: \n")
-end.cor.time - start.cor.time
 
   #################Enrichment analysis#################
 
@@ -498,10 +488,8 @@ if(enrich){
       gost_ja <- function(x){
         tryCatch(
           expr = {
-            gost.res <<-
-              gost(query= g.sets[x], organism = "mmusculus", domain_scope = "annotated", significant = T, evcodes = TRUE,
+            gost.res <<-gost(query= g.sets[x], organism = "mmusculus", domain_scope = "annotated", significant = T, evcodes = TRUE,
                              sources = c("GO", "KEGG", "REAC", "WP", "MIRNA", "HPA", "CORUM", "HP"))
-   
             message("Successfully executed the gost call.")
             
           },
@@ -528,6 +516,9 @@ if(enrich){
       while(gost.response==TRUE && b<5) { 
         
         gost_ja()
+        
+        
+        
         Sys.sleep(2)
         b= b+1
         if(b==5){
@@ -568,12 +559,6 @@ if(enrich){
       Sys.sleep(1)
     }
   }
-  end.enrich.time = Sys.time()
-  message("\n Enrichment analysis completed \n")
-  message("\n Enrichment analysis duration: \n")
-  end.enrich.time - start.enrich.time
-}
-  
   #################Search for significant gene sets#################
   if(gen.set.sign){
     message("\n Loading gene lists to compare with\n")
@@ -611,12 +596,10 @@ if(enrich){
     genes_oldVSall <- as.data.frame(genes_oldVSall)
     
   }
-end.analysis = Sys.time()  
+  
+}
 
-message("\n All done! \n ")
-message("\n Duration of analysis: \n ")
-end.analysis - start.analysis
 
-quit(save = "no")
-
+message("\n End of analysis \n ")
+end.cor.time - start.cor.time
 
