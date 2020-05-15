@@ -108,7 +108,7 @@ if(!is.null(enrich.only)){
   
   #Read cor.res by 3 to follow the routine of enrichment analysis using the selectedGene variable
   for (i in seq(1, length(cor.res), by=3)){
-      
+    
     selectedGene = names(cor.res[i])
     message("\n------Working on ", selectedGene, "------\n")
 
@@ -121,7 +121,7 @@ if(!is.null(enrich.only)){
     gost_S198 = list()
     
     for (x in 1:length(g.sets)){
-      
+   
       if(length(g.sets[x][1][[1]])==0){
         message("\n ", names(g.sets[x]), " is empty\n")
         next
@@ -154,11 +154,11 @@ if(!is.null(enrich.only)){
         
       }
       gost.response <- FALSE
-      gost_ja()
+      gost_ja(x)
       b=0
       while(gost.response==TRUE && b<5) { 
         
-        gost_ja()
+        gost_ja(x)
 
         Sys.sleep(2)
         b= b+1
@@ -511,11 +511,11 @@ if(enrich){
         
       }
       gost.response <- FALSE
-      gost_ja()
+      gost_ja(x)
       b=0
       while(gost.response==TRUE && b<5) { 
         
-        gost_ja()
+        gost_ja(x)
         
         
         
