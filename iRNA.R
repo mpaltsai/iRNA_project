@@ -77,6 +77,7 @@ suppressPackageStartupMessages(library(Matrix))
 suppressPackageStartupMessages(library(psych))
 suppressPackageStartupMessages(library(plotly))
 suppressPackageStartupMessages(library(SingleCellExperiment))
+suppressPackageStartupMessages(library(BioQC))
 
 message("libraries loaded\n")
 
@@ -559,43 +560,7 @@ if(enrich){
       Sys.sleep(1)
     }
   }
-  #################Search for significant gene sets#################
-  if(gen.set.sign){
-    message("\n Loading gene lists to compare with\n")
-    
-    #####getting an error:
-    #Error in header + nrows : non-numeric argument to binary operator
-   # Calls: sapply -> read.csv -> read.table
-    #Execution halted
-    
-    #read frog file and call it genes_OldProt
-    genes_OldProt <- read.csv("./input_data/Frog_Clusters.csv", sep=",", header = T)
-    dim_genes_OldProt <- dim(genes_OldProt)
-    genes_OldProt <- apply(genes_OldProt, 2, toupper)
-    genes_OldProt <- as.data.frame(genes_OldProt)
-    
-    #New_Targets.csv: read the 2 first rows as header and call it genes_batch
-    header2 <- sapply(read.csv("./input_data/New_Targets.csv", header=F, sep=",", 
-                               check.names=FALSE, nrow=2) , paste, collapse="_")
-    
-    genes_batch <- read.csv("./input_data/New_Targets.csv", sep=",", header = F,
-                            check.names=FALSE, skip=2, col.names=header2)
-    dim_genes_batch <- dim(genes_batch)
-    genes_batch <- apply(genes_batch, 2, toupper)
-    genes_batch <- as.data.frame(genes_batch)
-    
-    #ChIPseq_genes.csv: read the 2 first rows as header and call it genes_oldVSall
-    header3 <- sapply(read.csv("./input_data/ChIPseq_genes.csv", header=F, sep=",", 
-                               check.names=FALSE, nrow=2) , paste, collapse="_")
-    
-    genes_oldVSall <- read.csv("./input_data/ChIPseq_genes.csv", sep=",", header = F,
-                               check.names=FALSE, skip=2, col.names=header3)
-    dim_genes_OldVSall <- dim(genes_oldVSall)
-    print( dim(genes_oldVSall))
-    genes_oldVSall <- apply(genes_oldVSall, 2, toupper)
-    genes_oldVSall <- as.data.frame(genes_oldVSall)
-    
-  }
+
   
 }
 
