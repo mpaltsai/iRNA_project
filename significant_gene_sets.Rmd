@@ -180,7 +180,6 @@ p_0.05_fdr = length(pvalues_fdr[pvalues_fdr<0.05])
 
 cat("\ncomparisons with an adjusted (Benjamini_Hochberg method) p value < 0.05:", p_0.05_fdr)
 
-#BiocManager::install("qvalue")
 library(qvalue)
 qobj <-qvalue(pvalues, pi0 = 1)
 q_0.05 = length(qobj$qvalues[qobj$qvalues<0.05])

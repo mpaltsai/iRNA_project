@@ -9,36 +9,39 @@ knitr::opts_chunk$set(echo = TRUE)
 The directory you are working is:
 ```{r, include=FALSE, echo =TRUE}
 getwd()
-x <- c("tidyverse", "SingleCellExperiment", "Matrix", "AnnotationHub", "ensembldb", "ggplot2", "scales")
+x <- c("tidyverse", "SingleCellExperiment", "Matrix", "AnnotationHub", "ensembldb", "ggplot2", "scales", "Seurat")
 invisible(lapply(x, suppressPackageStartupMessages(library), character.only = TRUE))
 
 ```
 ## Input data
 
 - In case you have a count matrix with barcodes as column names and gene names as rownames, please set _count.matrix_ = TRUE and provide the filename in quotes to the _input_ variable. 
-- If your data are the output from 10X platform then you have to set _count.matrix_ = FALSE and provide the directory where these data are to the varable _input.dir_
+- If your data are the output from 10X platform then you have to set _count.matrix_ = FALSE and provide the directory where these data are stored to the varable _input.dir_
 
 ```{r}
-
-count.matrix = TRUE
+#load("~/Documents/RNA_cor/iRNA/iRNA_project/input_data/SRA653146_SRS2874272.sparse.RData")
+#dim(sm)
+count.matrix = FALSE
 #provide the filename of the count matrix you'd like to analyse
-input = "/home/ismini/Documents/RNA_cor/iRNA/S190/scWCP10_S190_matrix.count.csv"
+#input = "/home/ismini/Documents/RNA_cor/iRNA/S190/scWCP10_S190_matrix.count.csv"
 
 #provide the directory to access data from 10X platform
-input.dir = "path of directory"
+input.dir = "~/Documents/RNA_cor/iRNA/iRNA_project/input_data/EHCAD/"
 
 if(count.matrix){
 # Import count matrix
-txi <- read.csv(input, header = TRUE, row.names = 1, sep = "\t")
+#txi <- read.csv(input, header = TRUE, row.names = 1, sep = "\t")
+
 # Import barcodes
-cell_ids <- colnames(txi)
+cell_ids <- colnames(sm)
 # Import genes
-genes <- rownames(txi)
+genes <- rownames(sm)
+counts <- sm
 # Convert to a sparse matrix for more efficient computation
-counts <- as(as.matrix(txi[,]), "dgCMatrix")
+#counts <- as(as.matrix(txi[,]), "dgCMatrix")
 } else {
   # Read 10X data from the directory provided in input.dir
-  counts <- Read10X(data.dir =input.dir)
+  counts <- Read10X(data.dir = input.dir)
   
   # Import barcodes
   cell_ids <- colnames(counts)
@@ -95,7 +98,7 @@ ah <- AnnotationHub()
 Provide the organism of interest in quotes to the variable organism (e.g. "Homo sapiens")
 ```{r}
 # Access the Ensembl database for organism
-organism = "Mus musculus"
+organism = "Homo sapiens"
 ahDb <- query(ah, 
               pattern = c(organism, "EnsDb"), 
               ignore.case = TRUE)
@@ -130,21 +133,30 @@ annotations <- annotations %>%
 Determining mitochrondrial content is an important feature that wll allow us to detect cells where the capture efficiency of the RNA is low. We can use this to filter bad cells that will have little to no MT genes or too high MT content.
 
 - If genes in your data are provided as gene names (e.g. Erf) then you have to set gene.name = TRUE
-- In case they are provided with their Ensembl ids you have to set gene.name = FALSE 
+- In case they are provided with their Ensembl ids you have to set gene.name = FALSE and gene ids will be converted to gene names in your initial dataset
 
 ##NOTE: Check metadata$mitoRatio below and in case it returns only zeroes, change in the below code chunk "MT" to "mt"
 
 ```{r}
 
-gene.name = TRUE
+gene.name = FALSE
 if(gene.name){
 mt <- annotations %>% 
   dplyr::filter(seq_name == "MT") %>%
   dplyr::pull(gene_name)
 }else{
-mt <- annotations %>% 
-dplyr::filter(seq_name == "MT") %>%
-dplyr::pull(gene_id)
+  rowNames <-  as.matrix(rownames(counts) )
+  rowNames2 <- annotations %>%
+  dplyr::filter(gene_id %in% rowNames) %>%
+  dplyr::select(gene_name, gene_id, seq_name)
+  colnames(rowNames) = "gene_id"
+
+  xxx = merge(as.data.frame(rowNames), rowNames2, by.x = "gene_id", by.y = "gene_id", sort = FALSE)
+  rownames(counts) <- xxx$gene_name
+
+  mt <- annotations %>% 
+  dplyr::filter(seq_name == "MT") %>%
+  dplyr::pull(gene_name)
 }
 
 ```
@@ -155,8 +167,11 @@ Now that we have information about which genes are mitochondrial, we can quaniti
 
 ```{r}
 # Number of UMIs assigned to mitochondrial genes
+#the code below is not applied to the data because rownames ("gene names") are provided with gene.id and gene.name  merged with a "_", so we have to search for the names in mt in rownames with grepl (see line 165)
 metadata$mtUMI <- Matrix::colSums(counts[which(rownames(counts) %in% mt),], na.rm = T)
-
+#Pattern = paste(mt, collapse="|")
+#which(grepl(Pattern, rownames(counts))==TRUE)
+#metadata$mtUMI <- Matrix::colSums(counts[which(grepl(Pattern, rownames(counts))==TRUE),], na.rm = T)
 # Ensure all NAs receive zero counts
 metadata$mtUMI[is.na(metadata$mtUMI)] <- 0
 
@@ -190,11 +205,11 @@ Before we assess our metrics we are going to save all of the work we have done t
 
 Provide the name for your dataset to the dataset.name variable in quotes
 ```{r}
-dataset.name = "S190"
+dataset.name = "ebi_CD34"
 # Save data to single cell experiment variable
 se <- SingleCellExperiment(assays=list(counts=counts), 
                            colData = metadata)
-                           
+
 # Create .RData object to load at any time
 saveRDS(se, paste0("raw_se_", dataset.name, ".rds"))
 ```
@@ -206,7 +221,7 @@ In case you want to assess previously analysed data you can provide your raw dat
 Load data
 ```{r}
 already = TRUE
-input.data = "se_filtered_S190_0.02_0.07.rds"
+input.data = "se_filtered_ebi_CD34_0.02_0.07.rds"
 if(already){
 se <- readRDS(input.data)
 }
@@ -237,6 +252,7 @@ metrics %>%
   ggplot(aes(x=sample, fill=sample)) + 
   geom_bar(width=.6) + 
   ggtitle("Number of Cells")
+
 ```
 # UMI counts (transcripts) per cell
 
@@ -262,7 +278,7 @@ metrics %>%
         ggplot(aes(color=sample, x=nGene, fill= sample)) + 
         geom_density() + 
         scale_x_log10() + 
-        geom_vline(xintercept = 500)
+        geom_vline(xintercept = 3500)
 ```
 
 ```{r}
@@ -298,7 +314,7 @@ This metric can identify whether there is a large amount of mitochondrial contam
 metrics %>% 
         ggplot(aes(color=sample, x=mitoRatio, fill=sample)) + 
         geom_density() + 
-        scale_x_log10() + 
+        #scale_x_log10() + 
         geom_vline(xintercept = 0.05)
 ```
 
