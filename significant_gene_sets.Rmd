@@ -12,24 +12,24 @@ getwd()
 #clean the working environment
 rm(list=ls())
 #Set parameters
-dataset.name = 'frog'
-mitoRatio = 0.03
-gene.name = "ERF"
-#provide the full path of the file containing gene sets to be analysed (NOTE: in quotes)
-gene.set = "/home/ismini/Documents/RNA_cor/iRNA/iRNA_project/results/2020-05-19_17:06/ERF/ERF_0.03_frog.csv"
+
+#provide the directory path if you have more than one files to analyze 
+dir.path = "/home/ismini/Documents/RNA_cor/iRNA/iRNA_project/results/ToTest/testing"
+#and the file containing gene sets to be analysed, if you wish to analyse only that file. IF NOT leave it blank otherwise analysis will run on that file
+file.to.use = "ALPL_0.015_0.05_E18_S198_E18_p.tsv"
+#(NOTE: paths in quotes)
+
+
+if (exists("file.to.use")) {
+  files <- file.path(dir.path,file.to.use)
+} else {
+  files <- list.files(path=dir.path, full.names=TRUE, recursive=FALSE)
+} 
 ```
 
 ```{r}
 
-output.path = gsub("(.*)[/].*", "\\1", gene.set)
-message("Results will be stored at: \n", output.path)  
-
 message("\n Loading gene lists to compare with\n")
-
-#####getting an error:
-#Error in header + nrows : non-numeric argument to binary operator
-# Calls: sapply -> read.csv -> read.table
-#Execution halted
 
 #read frog file and call it genes_OldProt
 genes_OldProt <- read.csv("./input_data/Frog_Clusters.csv", sep=",", header = TRUE)
@@ -57,247 +57,310 @@ dim_genes_OldVSall <- dim(genes_oldVSall)
 genes_oldVSall <- apply(genes_oldVSall, 2, toupper)
 genes_oldVSall <- as.data.frame(genes_oldVSall)
 
-message("\n Reading data...\n")
-
-label_rows = 8
-gene_data = read.csv(gene.set, header=F, sep=",", check.names=FALSE, nrow=label_rows)
-header0 <- apply(as.matrix(gene_data[c(1:6,8),1]) ,2,  paste, collapse="_")
-
-new_targets = read.csv(gene.set, sep=",", header = F,check.names=FALSE, skip=label_rows)
-
-#keep only the first column that keeps gene names
-new_targets = new_targets[,1, drop = FALSE]
-colnames(new_targets) = header0
-
-dim_new_targets <- dim(new_targets)
-message("\nNumber of genes in gene set: ", dim_new_targets[1]) 
-
-
-#upper case to genes strings
-new_targets <- apply(new_targets, 2, toupper)
-new_targets <- as.data.frame(new_targets)
-
-## Fisher's exact test between new_targets and each of the remaining matrices, p values, adjusted p values and q values
-
-fun <- function(df1, df2){
-  l <- c()
-  g<- list()
-  c = 0
-  for(i in 1:ncol(df1)){
-    for (k in 1:ncol(df2)){
-      v1 <- as.matrix(df1)[,i]
-      v2 <- as.matrix(df2)[,k]
-      
-      
-      common_genes = intersect(v1, v2)
-      
-      count_g = length(common_genes)
-      l<- c(l, count_g)
-      
-      c = c + 1
-      g[c]<- list(common_genes)
-      
-      #print(count_g)
-      #common_genes
-    
-    }
+#message("Results will be stored at: \n", output.path)  
+ 
+for(x in files) {
+ # x = "/home/ismini/Documents/RNA_cor/iRNA/iRNA_project/results/ToTest/testing/ERF_neg.cor_0.015_0.05_E18_S198_k.tsv"  
+   output.path = gsub("(.*)[/].*", "\\1", x)
+  if(gsub(paste0(output.path,"/","(.*)"), "\\1", x)=="sigificant_genesets"){
+    next
   }
-  l
-  #common_genes
-  #g
-}
-
-count_genes_targets_genes_batch = fun(new_targets, genes_batch)
-count_genes_targets_genes_OldProt = fun(new_targets, genes_OldProt)
-count_genes_targets_genes_OldVSall = fun(new_targets, genes_oldVSall)
-
-
-###list of common genes
-fun2 <- function(df1, df2){
-  g<- list()
-  c = 0
-  for(i in 1:ncol(df1)){
-    for (k in 1:ncol(df2)){
-      v1 <- as.matrix(df1)[,i]
-      v2 <- as.matrix(df2)[,k]
-    
-      common_genes = intersect(v1, v2)
-      c = c + 1
-      g[c]<- list(common_genes)
-
-    }
-  }
-  g
-}
-
-common_genes_targets_genes_batch <- fun2(new_targets, genes_batch)
-common_genes_targets_genes_OldProt = fun2(new_targets, genes_OldProt)
-common_genes_targets_genes_OldVSall = fun2(new_targets, genes_oldVSall)
-
-#####Fischer's test
-
-my_fishers_test <- function(df1, df2){
-  f <- c()
-  for(i in 1:ncol(df1)){
-    for (k in 1:ncol(df2)){
-      v1 <- as.matrix(df1)[,i]
-      v2 <- as.matrix(df2)[,k]
-      
-      n=20465
-      f_test <- fisher.test(matrix(c(n-length(union(v1,v2)),   length(setdiff(v1,v2)), 
-                length(setdiff(v2,v1)), length(intersect(v1,v2))), nrow=2), 
-                alternative="greater")$p.value
-
-      f<- c(f, f_test)
-      
-      #print(count_g)
-      #common_genes
-      
-    }
-  }
-  f
-}
-
-fishers_targets_genes_batch <- my_fishers_test(new_targets, genes_batch)
-fishers_targets_genes_OldProt = my_fishers_test(new_targets, genes_OldProt)
-fishers_targets_genes_OldVSall = my_fishers_test(new_targets, genes_oldVSall)
-
-#p values in total
-pvalues=c(fishers_targets_genes_batch,fishers_targets_genes_OldProt,fishers_targets_genes_OldVSall)
-p_0.05 = length(pvalues[pvalues<0.05])
-
-cat("comparisons with a p value < 0.05:", p_0.05)
-
-#p values adjustment with Bonferroni method
-pvalues_bonf <- p.adjust(pvalues,method="bonferroni")
-p_0.05_bonf = length(pvalues_bonf[pvalues_bonf<0.05])
-
-cat("\ncomparisons with an adjusted (Bonferroni method) p value < 0.05:", p_0.05_bonf)
-
-#p values adjustment with Benjamini Hochberg method
-pvalues_fdr <- p.adjust(pvalues,method="fdr")
-p_0.05_fdr = length(pvalues_fdr[pvalues_fdr<0.05])
-
-cat("\ncomparisons with an adjusted (Benjamini_Hochberg method) p value < 0.05:", p_0.05_fdr)
-
-library(qvalue)
-qobj <-qvalue(pvalues, pi0 = 1)
-q_0.05 = length(qobj$qvalues[qobj$qvalues<0.05])
-cat("\ncomparisons with a q value < 0.05:", q_0.05)
-
-########################### Write results to files #################################3
-
-#check if the directory exists and if not create it
-ifelse(!dir.exists(file.path(output.path,"sigificant_genesets/")),dir.create(file.path(output.path,"sigificant_genesets/")), FALSE)
   
-#f.path = paste0(file.path(output.path,"sigificant_genesets/"),"Erf_",analysis ,"_New_targets.csv")
+ 
+  message("\nworking on ", x, "...")
+  file.name = gsub(paste0(output.path,"/","(.*)"), "\\1", x)
 
-###GeneLists vs new_targets#####################################
-max_genes_batch_comparisons <- max(count_genes_targets_genes_batch) #it is 71
-common1 = sapply (common_genes_targets_genes_batch, function (x) {length (x) <- max_genes_batch_comparisons; return (x)})
-
-#labels for columnwise comparisons
-labels1= c()
-for(i in 1:ncol(new_targets)){
-  for (k in 1:ncol(genes_batch)){
-    label = paste(colnames(new_targets)[i], " versus ", colnames(genes_batch)[k])
-    labels1 = c(labels1, label)
-    labels1
+  
+  #skip GO.csv files
+  if(grepl('GO', file.name, fixed = TRUE)){
+    message("skipping ", x)
+    next
   }
-}
+  #type of file format
+  file.extension = tools::file_ext(basename(file.name))
 
-#labels, pvalues and common genes in one matrix
-l_genes_batch_comparisons = dim_new_targets[2]*dim_genes_batch[2]
-final1 = rbind(labels1, fishers_targets_genes_batch, pvalues_bonf[1:l_genes_batch_comparisons], pvalues_fdr[1:l_genes_batch_comparisons], qobj$qvalues[1:l_genes_batch_comparisons], common1)
-
-#final1 <- rbind(matrix(data=unlist(strsplit(final1[1,], " v ")), nrow=2,ncol=320), final1[-1,])
-#split header back to 4 rows 
-DF1 <- read.table(text=final1[1,], sep ="_", as.is = TRUE)
-final_new_targets_genes_batch = rbind(t(DF1),  final1[-1,])
-
-max_genes_OldProt_comparisons <- max(count_genes_targets_genes_OldProt) #it is 71
-common2 = sapply (common_genes_targets_genes_OldProt, function (x) {length (x) <- max_genes_OldProt_comparisons; return (x)})
-
-#labels for columnwise comparisons
-labels2= c()
-for(i in 1:ncol(new_targets)){
-  for (k in 1:ncol(genes_OldProt)){
-    label = paste(colnames(new_targets)[i], " versus ", colnames(genes_OldProt)[k])
-    labels2 = c(labels2, label)
-    labels2
+  if(grepl('t', file.extension, fixed = TRUE)){
+    my.sep = "\t"
+  }else{
+    my.sep = ","
   }
-}
+  file.name.no.ext = gsub(paste0("(.*).", file.extension), "\\1", file.name)
+ 
 
-#labels, pvalues and common genes in one matrix
-l_genes_OldProt_comparisons = dim_new_targets[2]*dim_genes_OldProt[2]
-
-final2 = rbind(labels2, fishers_targets_genes_OldProt,      pvalues_bonf[(l_genes_batch_comparisons+1):(l_genes_batch_comparisons+l_genes_OldProt_comparisons)], 
-pvalues_fdr[(l_genes_batch_comparisons+1):(l_genes_batch_comparisons+l_genes_OldProt_comparisons)], 
-qobj$qvalues[(l_genes_batch_comparisons+1):(l_genes_batch_comparisons+l_genes_OldProt_comparisons)], 
-common2)
-
-#split header back to 6 rows 
-DF2 <- read.table(text=final2[1,], sep = "_", as.is = TRUE)
-
-final_new_targets_genes_OldProt = rbind(t(DF2), final2[-1,])
-
-###GeneLists vs ChIPseq################################
-
-#f.path = paste0(file.path(getwd(),"sigificant_genesets/"),"Erf_", analysis, "_vs_ChIPseq.csv")
-
-max_genes_OldVSall_comparisons <- max(count_genes_targets_genes_OldVSall)
-common3 = sapply (common_genes_targets_genes_OldVSall, function (x) {length (x) <- max_genes_OldVSall_comparisons; return (x)})
-
-#labels for columnwise comparisons
-labels3= c()
-for(i in 1:ncol(new_targets)){
-  for (k in 1:ncol(genes_oldVSall)){
-    label = paste(colnames(new_targets)[i], " versus ", colnames(genes_oldVSall)[k])
-    labels3 = c(labels3, label)
-    labels3
+  message("\n Reading data...\n")
+  
+  label_rows = 8
+  gene_data = read.csv(x, header=FALSE, sep=my.sep, check.names=FALSE, nrow=label_rows)
+  header0 <- apply(as.matrix(gene_data[c(1:6,8),1]) ,2,  paste, collapse="_")
+  no.lines = FALSE
+   read_x <- function(x){
+              tryCatch(
+                      expr = {
+                        new_targets <<- read.csv(x, sep=my.sep, header = FALSE,check.names=FALSE, skip=label_rows)
+                       
+                      },
+                      error = function(e){
+                        no.lines <<- TRUE
+                        message(e$message)
+                        
+                      },
+                      warning = function(w){
+                        message('Warning:')
+                        message(w)
+                      },
+                      finally = {
+                        message('\n')
+                      }
+                      
+                    ) 
+                }
+   read_x(x)
+   if(no.lines){
+    next
   }
-}
+  #keep only the first column that keeps gene names
+  new_targets = new_targets[,1, drop = FALSE]
+  colnames(new_targets) = header0
+  
+  dim_new_targets <- dim(new_targets)
+  message("\nNumber of genes in gene set: ", dim_new_targets[1]) 
+  if(dim_new_targets[1]==0){
+    message("table: ", x,  " is empty")
+    next
+  }
 
-#labels, pvalues and common genes in one matrix
-l_genes_OldVSall_comparisons <- dim_new_targets[2]*dim_genes_OldVSall[2]
-final3 = rbind(labels3, 
-               fishers_targets_genes_OldVSall, 
-               pvalues_bonf[(l_genes_batch_comparisons+l_genes_OldProt_comparisons+1):length(pvalues)], 
-               pvalues_fdr[(l_genes_batch_comparisons+l_genes_OldProt_comparisons+1):length(pvalues)], 
-               qobj$qvalues[(l_genes_batch_comparisons+l_genes_OldProt_comparisons+1):length(pvalues)], 
-               common3)
-#split header back to 6 rows 
-DF3 <- read.table(text=final3[1,], sep = "_", as.is = TRUE)
 
-final_new_targets_genes_OldVSall = rbind(t(DF3), final3[-1,])
+  #upper case to genes strings
+  new_targets <- apply(new_targets, 2, toupper)
+  new_targets <- as.data.frame(new_targets)
+  
+  ## Fisher's exact test between new_targets and each of the remaining matrices, p values, adjusted p values and q values
+  
+  fun <- function(df1, df2){
+    l <- c()
+    g<- list()
+    c = 0
+    for(i in 1:ncol(df1)){
+      for (k in 1:ncol(df2)){
+        v1 <- as.matrix(df1)[,i]
+        v2 <- as.matrix(df2)[,k]
+        
+        
+        common_genes = intersect(v1, v2)
+        
+        count_g = length(common_genes)
+        l<- c(l, count_g)
+        
+        c = c + 1
+        g[c]<- list(common_genes)
+        
+        #print(count_g)
+        #common_genes
+      
+      }
+    }
+    l
+    #common_genes
+    #g
+  }
+  
+  count_genes_targets_genes_batch = fun(new_targets, genes_batch)
+  count_genes_targets_genes_OldProt = fun(new_targets, genes_OldProt)
+  count_genes_targets_genes_OldVSall = fun(new_targets, genes_oldVSall)
+  
+  
+  ###list of common genes
+  fun2 <- function(df1, df2){
+    g<- list()
+    c = 0
+    for(i in 1:ncol(df1)){
+      for (k in 1:ncol(df2)){
+        v1 <- as.matrix(df1)[,i]
+        v2 <- as.matrix(df2)[,k]
+      
+        common_genes = intersect(v1, v2)
+        c = c + 1
+        g[c]<- list(common_genes)
+  
+      }
+    }
+    g
+  }
+  
+  common_genes_targets_genes_batch <- fun2(new_targets, genes_batch)
+  common_genes_targets_genes_OldProt = fun2(new_targets, genes_OldProt)
+  common_genes_targets_genes_OldVSall = fun2(new_targets, genes_oldVSall)
+  
+  #####Fischer's test
+  
+  my_fishers_test <- function(df1, df2){
+    f <- c()
+    for(i in 1:ncol(df1)){
+      for (k in 1:ncol(df2)){
+        v1 <- as.matrix(df1)[,i]
+        v2 <- as.matrix(df2)[,k]
+        
+        n=20465
+        f_test <- fisher.test(matrix(c(n-length(union(v1,v2)),   length(setdiff(v1,v2)), 
+                  length(setdiff(v2,v1)), length(intersect(v1,v2))), nrow=2), 
+                  alternative="greater")$p.value
+  
+        f<- c(f, f_test)
+        
+        #print(count_g)
+        #common_genes
+        
+      }
+    }
+    f
+  }
+  
+  fishers_targets_genes_batch <- my_fishers_test(new_targets, genes_batch)
+  fishers_targets_genes_OldProt = my_fishers_test(new_targets, genes_OldProt)
+  fishers_targets_genes_OldVSall = my_fishers_test(new_targets, genes_oldVSall)
+  
+  #p values in total
+  pvalues=c(fishers_targets_genes_batch,fishers_targets_genes_OldProt,fishers_targets_genes_OldVSall)
+  p_0.05 = length(pvalues[pvalues<0.05])
+  
+  cat("comparisons with a p value < 0.05:", p_0.05)
+  
+  #p values adjustment with Bonferroni method
+  pvalues_bonf <- p.adjust(pvalues,method="bonferroni")
+  p_0.05_bonf = length(pvalues_bonf[pvalues_bonf<0.05])
+  
+  cat("\ncomparisons with an adjusted (Bonferroni method) p value < 0.05:", p_0.05_bonf)
+  
+  #p values adjustment with Benjamini Hochberg method
+  pvalues_fdr <- p.adjust(pvalues,method="fdr")
+  p_0.05_fdr = length(pvalues_fdr[pvalues_fdr<0.05])
+  
+  cat("\ncomparisons with an adjusted (Benjamini_Hochberg method) p value < 0.05:", p_0.05_fdr)
+  
+  library(qvalue)
+  qobj <-qvalue(pvalues, pi0 = 1)
+  q_0.05 = length(qobj$qvalues[qobj$qvalues<0.05])
+  cat("\ncomparisons with a q value < 0.05:", q_0.05)
+  
+  ########################### Write results to files #################################3
+  
+  #check if the directory exists and if not create it
+  ifelse(!dir.exists(file.path(output.path,"sigificant_genesets/")),dir.create(file.path(output.path,"sigificant_genesets/")), FALSE)
+    
+  #f.path = paste0(file.path(output.path,"sigificant_genesets/"),"Erf_",analysis ,"_New_targets.csv")
+  
+  ###GeneLists vs new_targets#####################################
+  max_genes_batch_comparisons <- max(count_genes_targets_genes_batch) #it is 71
+  common1 = sapply (common_genes_targets_genes_batch, function (x) {length (x) <- max_genes_batch_comparisons; return (x)})
+  
+  #labels for columnwise comparisons
+  labels1= c()
+  for(i in 1:ncol(new_targets)){
+    for (k in 1:ncol(genes_batch)){
+      label = paste(colnames(new_targets)[i], " versus ", colnames(genes_batch)[k])
+      labels1 = c(labels1, label)
+      labels1
+    }
+  }
+  
+  #labels, pvalues and common genes in one matrix
+  l_genes_batch_comparisons = dim_new_targets[2]*dim_genes_batch[2]
+  final1 = rbind(labels1, fishers_targets_genes_batch, pvalues_bonf[1:l_genes_batch_comparisons], pvalues_fdr[1:l_genes_batch_comparisons], qobj$qvalues[1:l_genes_batch_comparisons], common1)
+  
+  #final1 <- rbind(matrix(data=unlist(strsplit(final1[1,], " v ")), nrow=2,ncol=320), final1[-1,])
+  #split header back to 4 rows 
+  #DF1 <- read.table(text=final1[1,], sep ="_", as.is = TRUE)
+  #final_new_targets_genes_batch = rbind(t(DF1),  final1[-1,])
+  
+  max_genes_OldProt_comparisons <- max(count_genes_targets_genes_OldProt) #it is 71
+  common2 = sapply (common_genes_targets_genes_OldProt, function (x) {length (x) <- max_genes_OldProt_comparisons; return (x)})
+  
+  #labels for columnwise comparisons
+  labels2= c()
+  for(i in 1:ncol(new_targets)){
+    for (k in 1:ncol(genes_OldProt)){
+      label = paste(colnames(new_targets)[i], " versus ", colnames(genes_OldProt)[k])
+      labels2 = c(labels2, label)
+      labels2
+    }
+  }
+  
+  #labels, pvalues and common genes in one matrix
+  l_genes_OldProt_comparisons = dim_new_targets[2]*dim_genes_OldProt[2]
+  
+  final2 = rbind(labels2, fishers_targets_genes_OldProt,      pvalues_bonf[(l_genes_batch_comparisons+1):(l_genes_batch_comparisons+l_genes_OldProt_comparisons)], 
+  pvalues_fdr[(l_genes_batch_comparisons+1):(l_genes_batch_comparisons+l_genes_OldProt_comparisons)], 
+  qobj$qvalues[(l_genes_batch_comparisons+1):(l_genes_batch_comparisons+l_genes_OldProt_comparisons)], 
+  common2)
+
+  
+  ###GeneLists vs ChIPseq################################
+  
+  max_genes_OldVSall_comparisons <- max(count_genes_targets_genes_OldVSall)
+  common3 = sapply (common_genes_targets_genes_OldVSall, function (x) {length (x) <- max_genes_OldVSall_comparisons; return (x)})
+  
+  #labels for columnwise comparisons
+  labels3= c()
+  for(i in 1:ncol(new_targets)){
+    for (k in 1:ncol(genes_oldVSall)){
+      label = paste(colnames(new_targets)[i], " versus ", colnames(genes_oldVSall)[k])
+      labels3 = c(labels3, label)
+      labels3
+    }
+  }
+  
+  #labels, pvalues and common genes in one matrix
+  l_genes_OldVSall_comparisons <- dim_new_targets[2]*dim_genes_OldVSall[2]
+  final3 = rbind(labels3, 
+                 fishers_targets_genes_OldVSall, 
+                 pvalues_bonf[(l_genes_batch_comparisons+l_genes_OldProt_comparisons+1):length(pvalues)], 
+                 pvalues_fdr[(l_genes_batch_comparisons+l_genes_OldProt_comparisons+1):length(pvalues)], 
+                 qobj$qvalues[(l_genes_batch_comparisons+l_genes_OldProt_comparisons+1):length(pvalues)], 
+                 common3)
 
 ### Common genes with fdr<0.05:
 
-all_labels <- c(labels1, labels2, labels3)
-max_rows <- max(max_genes_batch_comparisons, max_genes_OldProt_comparisons, max_genes_OldVSall_comparisons)
-common1 <- apply (common1, 2, function (x) {length (x) <- max_rows; return (x)})
-common2 <- apply (common2, 2, function (x) {length (x) <- max_rows; return (x)})
-common3 <- apply (common3, 2, function (x) {length (x) <- max_rows; return (x)})
+  all_labels <- c(labels1, labels2, labels3)
+  max_rows <- max(max_genes_batch_comparisons, max_genes_OldProt_comparisons, max_genes_OldVSall_comparisons)
+  if(is.null(dim(common1)) & is.null(dim(common2)) &is.null(dim(common3))){
+    message("\nNo genes returned after p value adjustment. Skipping...")
+    next
+  }
+  #check if common is a vector and if it is transform it to a matrix
+  if(is.null(dim(common1))){
+    common1 <- apply (matrix(common1, nrow=1), 2, function (x) {length (x) <- max_rows; return (x)})
+  }else{
+    common1 <- apply (common1, 2, function (x) {length (x) <- max_rows; return (x)})
+  }
+  if(is.null(dim(common2))){
+    common2 <- apply (matrix(common2, nrow=1), 2, function (x) {length (x) <- max_rows; return (x)})
+  }else{
+    common2 <- apply (common2, 2, function (x) {length (x) <- max_rows; return (x)})
+  }
+  if(is.null(dim(common3))){
+    common3 <- apply (matrix(common3, nrow=1), 2, function (x) {length (x) <- max_rows; return (x)})
+  }else{
+    common3 <- apply (common3, 2, function (x) {length (x) <- max_rows; return (x)})
+  }
+  all_common <- cbind(common1, common2, common3)
+  
+  sign_p_values_index <- which(pvalues<0.05)
 
-all_common <- cbind(common1, common2, common3)
+  pvalues_mat <- matrix(pvalues, nrow=1, dimnames=(list("1", c(rep("New_targets",l_genes_batch_comparisons), rep("Frog_Clusters", l_genes_OldProt_comparisons), rep("ChIPseq", l_genes_OldVSall_comparisons) )) ))
+  
+  pvalues_bonf_mat <- matrix(pvalues_bonf, nrow=1, dimnames=(list("1", c(rep("New_targets",l_genes_batch_comparisons), rep("Frog_Clusters", l_genes_OldProt_comparisons), rep("ChIPseq", l_genes_OldVSall_comparisons) )) ))
+  
+  pvalues_fdr <- matrix(pvalues_fdr, nrow=1, dimnames=(list("1", c(rep("New_targets",l_genes_batch_comparisons), rep("Frog_Clusters", l_genes_OldProt_comparisons), rep("ChIPseq", l_genes_OldVSall_comparisons) )) ))
+  
+  qvalues_mat <- matrix(qobj$qvalues, nrow=1, dimnames=(list("1", c(rep("New_targets",l_genes_batch_comparisons), rep("Frog_Clusters", l_genes_OldProt_comparisons), rep("ChIPseq", l_genes_OldVSall_comparisons) )) ))
+  
+  sign_new_targets <- rbind(labels(pvalues_mat[,sign_p_values_index]), all_labels[sign_p_values_index],pvalues_mat[,sign_p_values_index],  pvalues_bonf[sign_p_values_index], pvalues_fdr[sign_p_values_index], qobj$qvalues[sign_p_values_index],  all_common[,sign_p_values_index])
+  dimnames(sign_new_targets) <- list(c("Gene list", "Comparison", "pvalue", "Bonferroni correction", "BH correction", "q values", "common genes", rep("", dim(sign_new_targets)[1]-7)), c(1:length(sign_p_values_index)))
 
-sign_p_values_index <- which(pvalues<0.05)
 
-pvalues_mat <- matrix(pvalues, nrow=1, dimnames=(list("1", c(rep("New_targets",l_genes_batch_comparisons), rep("Frog_Clusters", l_genes_OldProt_comparisons), rep("ChIPseq", l_genes_OldVSall_comparisons) )) ))
-
-pvalues_bonf_mat <- matrix(pvalues_bonf, nrow=1, dimnames=(list("1", c(rep("New_targets",l_genes_batch_comparisons), rep("Frog_Clusters", l_genes_OldProt_comparisons), rep("ChIPseq", l_genes_OldVSall_comparisons) )) ))
-
-pvalues_fdr <- matrix(pvalues_fdr, nrow=1, dimnames=(list("1", c(rep("New_targets",l_genes_batch_comparisons), rep("Frog_Clusters", l_genes_OldProt_comparisons), rep("ChIPseq", l_genes_OldVSall_comparisons) )) ))
-
-qvalues_mat <- matrix(qobj$qvalues, nrow=1, dimnames=(list("1", c(rep("New_targets",l_genes_batch_comparisons), rep("Frog_Clusters", l_genes_OldProt_comparisons), rep("ChIPseq", l_genes_OldVSall_comparisons) )) ))
-
-sign_new_targets <- rbind(labels(pvalues_mat[,sign_p_values_index]), all_labels[sign_p_values_index],pvalues_mat[,sign_p_values_index],  pvalues_bonf[sign_p_values_index], pvalues_fdr[sign_p_values_index], qobj$qvalues[sign_p_values_index],  all_common[,sign_p_values_index])
-dimnames(sign_new_targets) <- list(c("Gene list", "Comparison", "pvalue", "Bonferroni correction", "BH correction", "q values", "common genes", rep("", dim(sign_new_targets)[1]-7)), c(1:length(sign_p_values_index)))
-#dim(sign_new_targets)
-
-f.path = paste0(file.path(output.path,"sigificant_genesets/"),dataset.name, "_", mitoRatio, "_sign_GeneLists_", gene.name,".csv")
-write.table(sign_new_targets, f.path, sep=",", na="")
-
+  f.path = paste0(file.path(output.path,"sigificant_genesets/"),file.name.no.ext, "_sign_GeneLists", ".csv")
+  write.table(sign_new_targets, f.path, sep=",", na="")
+}
 
 
 ```
