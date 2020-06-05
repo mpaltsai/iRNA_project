@@ -21,17 +21,25 @@ invisible(lapply(x, suppressPackageStartupMessages(library), character.only = TR
 ```{r}
 #load("~/Documents/RNA_cor/iRNA/iRNA_project/input_data/SRA653146_SRS2874272.sparse.RData")
 #dim(sm)
-count.matrix = FALSE
+count.matrix = TRUE
+seurat = TRUE
 #provide the filename of the count matrix you'd like to analyse
-#input = "/home/ismini/Documents/RNA_cor/iRNA/S190/scWCP10_S190_matrix.count.csv"
+input = "~/Documents/RNA_cor/iRNA/iRNA_project/input_data/E15.5_scTransformnoRBC_res1.rds"
 
 #provide the directory to access data from 10X platform
-input.dir = "~/Documents/RNA_cor/iRNA/iRNA_project/input_data/EHCAD/"
+#input.dir = "~/Documents/RNA_cor/iRNA/iRNA_project/input_data/E15.5_scTransformnoRBC_res1.rds"
 
 if(count.matrix){
 # Import count matrix
 #txi <- read.csv(input, header = TRUE, row.names = 1, sep = "\t")
 
+
+  if(seurat){
+    sm <- readRDS(input)
+    sm = sm@assays$RNA@counts
+  }else{
+    sm <- read.csv(input, header = TRUE, row.names = 1, sep = "\t")
+  }
 # Import barcodes
 cell_ids <- colnames(sm)
 # Import genes
@@ -98,7 +106,7 @@ ah <- AnnotationHub()
 Provide the organism of interest in quotes to the variable organism (e.g. "Homo sapiens")
 ```{r}
 # Access the Ensembl database for organism
-organism = "Homo sapiens"
+organism = "Mus musculus"
 ahDb <- query(ah, 
               pattern = c(organism, "EnsDb"), 
               ignore.case = TRUE)
@@ -139,7 +147,7 @@ Determining mitochrondrial content is an important feature that wll allow us to 
 
 ```{r}
 
-gene.name = FALSE
+gene.name = TRUE
 if(gene.name){
 mt <- annotations %>% 
   dplyr::filter(seq_name == "MT") %>%
@@ -158,6 +166,10 @@ mt <- annotations %>%
   dplyr::filter(seq_name == "MT") %>%
   dplyr::pull(gene_name)
 }
+rbc = grep("^hemoglobin", annotations$description, value = TRUE, ignore.case=TRUE)
+#rbc = rbc[-(grep("like", rbc, ignore.case = TRUE))]
+rbc = annotations[which(annotations$description %in% rbc), match("gene_name", colnames(annotations))]
+#rbc = rbc[-c(1,7:10)]
 
 ```
 
@@ -180,6 +192,12 @@ metadata$mtUMI[is.na(metadata$mtUMI)] <- 0
 metadata$mitoRatio <- metadata$mtUMI/metadata$nUMI
 ```
 
+Define Hemoglobins
+```{r}
+metadata$rbcUMI <- Matrix::colSums(counts[which(rownames(counts) %in% rbc),], na.rm = TRUE)
+metadata$rbcUMI[is.na(metadata$rbcUMI)] <- 0
+metadata$rbcRatio <- metadata$rbcUMI/metadata$nUMI
+```
 # Filtering!!!
 
 This is very important to get correct as any "bad cells" will ultimately end up ruining your downstream analysis.
@@ -205,7 +223,7 @@ Before we assess our metrics we are going to save all of the work we have done t
 
 Provide the name for your dataset to the dataset.name variable in quotes
 ```{r}
-dataset.name = "ebi_CD34"
+dataset.name = "E15.5"
 # Save data to single cell experiment variable
 se <- SingleCellExperiment(assays=list(counts=counts), 
                            colData = metadata)
@@ -220,8 +238,8 @@ In case you want to assess previously analysed data you can provide your raw dat
 
 Load data
 ```{r}
-already = TRUE
-input.data = "se_filtered_ebi_CD34_0.02_0.07.rds"
+already = FALSE
+input.data = "se_filtered_E15.5_0.008_0.03.rds"
 if(already){
 se <- readRDS(input.data)
 }
@@ -305,6 +323,17 @@ metrics %>%
   facet_wrap(~sample)
 ```
 
+```{r}
+# Visualize the correlation between genes detected and number of UMIs and determine whether strong presence of cells with low numbers of genes/UMIs
+metrics %>% 
+  ggplot(aes(x=nUMI, y=nGene, color=rbcRatio)) + 
+  geom_point() + 
+  stat_smooth(method=lm) +
+  scale_x_log10() + 
+  scale_y_log10() + 
+  geom_hline(yintercept = 500) +
+  facet_wrap(~sample)
+```
 # Mitochondrial counts ratio
 
 This metric can identify whether there is a large amount of mitochondrial contamination from dead or dying cells. Poor quality samples for mitochondrial counts would have larger peaks above the 0.1 mitochondrial ratio mark, unless it is expected based on sample type.
@@ -318,6 +347,15 @@ metrics %>%
         geom_vline(xintercept = 0.05)
 ```
 
+#Hemoglobin counts ratio 
+```{r}
+# Visualize the distribution of hemoglobin gene expression detected per cell
+metrics %>% 
+        ggplot(aes(color=sample, x=rbcRatio, fill=sample)) + 
+        geom_density() + 
+        #scale_x_log10() + 
+        geom_vline(xintercept = 0.07)
+```
 # Novelty
 
 We can see the samples where we sequenced each cell less have a higher overall novelty, that is because we have not started saturating the sequencing for any given gene for these samples. Outlier cells in these samples might be cells that have a less complex RNA species than other cells. Sometimes we can detect contamination with low complexity cell types like red blood cells via this metric. Generally, we expect the novelty score to be above 0.80.
@@ -448,9 +486,15 @@ n.Gene.max = 3500
 #novelty per cell
 novelty = 0.8
 #mitochondrial ratio per cell
-mito.Ratio.min = 0.02
-mito.Ratio.max = 0.07
+mito.Ratio.min = 0.008
+mito.Ratio.max = 0.03
 message("Cells with mitoRatio above ", mito.Ratio.min, " and below ", mito.Ratio.max, " : ",length(which(metrics$mitoRatio>mito.Ratio.min & metrics$mitoRatio<mito.Ratio.max)))
+
+#maximum desired hemoglobin ratio per cell
+#rbc.Ratio.min = 0.05
+rbc.Ratio.max = 0.07
+message("Cells with rbcRatio above ", rbc.Ratio.max, " : ", length(which(metrics$rbcRatio>rbc.Ratio.max)))
+
 ```
 
 ```{r}
@@ -461,7 +505,8 @@ keep <- metrics %>%
                 nGene < n.Gene.max,
                 log10GenesPerUMI > novelty,
                 mitoRatio < mito.Ratio.max,
-                mitoRatio > mito.Ratio.min
+                mitoRatio > mito.Ratio.min,
+                rbcRatio < rbc.Ratio.max
                 ) %>% 
   pull(cells)
 
