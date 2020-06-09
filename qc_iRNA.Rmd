@@ -27,27 +27,29 @@ seurat = TRUE
 input = "~/Documents/RNA_cor/iRNA/iRNA_project/input_data/E15.5_scTransformnoRBC_res1.rds"
 
 #provide the directory to access data from 10X platform
-#input.dir = "~/Documents/RNA_cor/iRNA/iRNA_project/input_data/E15.5_scTransformnoRBC_res1.rds"
+input.dir = "~/Documents/RNA_cor/iRNA/iRNA_project/input_data/EHCAD/"
 
 if(count.matrix){
 # Import count matrix
-#txi <- read.csv(input, header = TRUE, row.names = 1, sep = "\t")
+#sm <- read.csv(input, header = TRUE, row.names = 1, sep = "\t")
 
 
   if(seurat){
-    sm <- readRDS(input)
-    sm = sm@assays$RNA@counts
+    txi <- readRDS(input)
+    txi = txi@assays$RNA@counts
+    }else{
+    txi <- read.csv(input, header = TRUE, row.names = 1, sep = "\t")
+    # Convert to a sparse matrix for more efficient computation
+    counts <- as(as.matrix(txi[,]), "dgCMatrix")}
+#str(counts)
+  # Import barcodes
+  cell_ids <- colnames(txi)
+  # Import genes
+  genes <- rownames(txi)
+  counts <- txi
+  # Convert to a sparse matrix for more efficient computation
+  #counts <- as(as.matrix(txi[,]), "dgCMatrix")
   }else{
-    sm <- read.csv(input, header = TRUE, row.names = 1, sep = "\t")
-  }
-# Import barcodes
-cell_ids <- colnames(sm)
-# Import genes
-genes <- rownames(sm)
-counts <- sm
-# Convert to a sparse matrix for more efficient computation
-#counts <- as(as.matrix(txi[,]), "dgCMatrix")
-} else {
   # Read 10X data from the directory provided in input.dir
   counts <- Read10X(data.dir = input.dir)
   
@@ -223,7 +225,7 @@ Before we assess our metrics we are going to save all of the work we have done t
 
 Provide the name for your dataset to the dataset.name variable in quotes
 ```{r}
-dataset.name = "E15.5"
+dataset.name = "S198"
 # Save data to single cell experiment variable
 se <- SingleCellExperiment(assays=list(counts=counts), 
                            colData = metadata)
@@ -238,8 +240,8 @@ In case you want to assess previously analysed data you can provide your raw dat
 
 Load data
 ```{r}
-already = FALSE
-input.data = "se_filtered_E15.5_0.008_0.03.rds"
+already = TRUE
+input.data = "se_filtered_S198_0.008_0.03.rds"
 if(already){
 se <- readRDS(input.data)
 }
@@ -405,7 +407,9 @@ plotUMAP(se)
 Quality metrics are calculated for you during this step.
 
 ```{r}
+counts(se) <- as.matrix(counts(se))
 se <- calculateQCMetrics(se)
+
 #'calculateQCMetrics' is deprecated.
 #Use 'perCellQCMetrics' or 'perFeatureQCMetrics' instead.
 ####although deprecated computes the metrics!!!!!!!!!!!!
