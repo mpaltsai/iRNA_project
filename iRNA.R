@@ -194,7 +194,10 @@ if(!is.null(enrich.only)){
       #write.csv(gost_S198[genes.incl[x]], 
       #paste0(file.path(getwd(), outputPath), paste0(genes.incl[x],'_GO.csv')), row.names=FALSE)
       message("\n Writing results to file\n")
-      suppressWarnings(write.table(gost_S198[names(g.sets[x])], f.path, sep=",", append=TRUE, col.names=NA))
+      
+      table_enrich = gost_S198[names(g.sets[x])][[1]][order(as.numeric(gost_S198[names(g.sets[x])][[1]][,1])),  ,drop = FALSE]
+      suppressWarnings(write.table(table_enrich, f.path, sep=",", append=TRUE, col.names=NA))
+      
       #wait a second before calling again gost
       Sys.sleep(1)
     } 
@@ -555,7 +558,10 @@ if(enrich){
       #write.csv(gost_S198[genes.incl[x]], 
       #paste0(file.path(getwd(), outputPath), paste0(genes.incl[x],'_GO.csv')), row.names=FALSE)
       message("\n Writing results to file\n")
-      suppressWarnings(write.table(gost_S198[names(g.sets[x])], f.path, sep=",", append=TRUE, col.names=NA))
+
+      table_enrich = gost_S198[names(g.sets[x])][[1]][order(as.numeric(gost_S198[names(g.sets[x])][[1]][,1])),  ,drop = FALSE]
+      suppressWarnings(write.table(table_enrich, f.path, sep=",", append=TRUE, col.names=NA))
+      #suppressWarnings(write.table(gost_S198[names(g.sets[x])], f.path, sep=",", append=TRUE, col.names=NA))
       #wait a second before calling again gost
       Sys.sleep(1)
     }
