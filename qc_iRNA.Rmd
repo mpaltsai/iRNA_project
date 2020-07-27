@@ -21,13 +21,13 @@ invisible(lapply(x, suppressPackageStartupMessages(library), character.only = TR
 ```{r}
 #load("~/Documents/RNA_cor/iRNA/iRNA_project/input_data/SRA653146_SRS2874272.sparse.RData")
 #dim(sm)
-count.matrix = TRUE
-seurat = TRUE
+count.matrix = FALSE
+seurat = FALSE
 #provide the filename of the count matrix you'd like to analyse
-input = "~/Documents/RNA_cor/iRNA/iRNA_project/input_data/E15.5_scTransformnoRBC_res1.rds"
+input = "~/Documents/RNA_cor/iRNA/iRNA_project/input_data/S598"
 
 #provide the directory to access data from 10X platform
-input.dir = "~/Documents/RNA_cor/iRNA/iRNA_project/input_data/EHCAD/"
+input.dir = "~/Documents/RNA_cor/iRNA/iRNA_project/input_data/S598"
 
 if(count.matrix){
 # Import count matrix
@@ -50,13 +50,47 @@ if(count.matrix){
   # Convert to a sparse matrix for more efficient computation
   #counts <- as(as.matrix(txi[,]), "dgCMatrix")
   }else{
-  # Read 10X data from the directory provided in input.dir
-  counts <- Read10X(data.dir = input.dir)
+    
+      no_barcodes <- FALSE
   
-  # Import barcodes
-  cell_ids <- colnames(counts)
-  # Import genes
-  genes <- rownames(counts)
+      check.it <- tryCatch( Read10X(data.dir = input.dir), error = function(e) { 
+      
+        e
+        #genes.xcl <<- c(genes.xcl, selectedGene)
+        no_barcodes <<- TRUE 
+        
+        e$message <- message(e, "\nWill assign numeric indices from 1 to the number of cells as barcode names")
+          })
+      
+      if(no_barcodes) { 
+            
+        #list files in directory
+            files <- list.files(path=input.dir, full.names=TRUE, recursive=FALSE)
+            for(x in files){
+              if(grepl("feature", x)){
+                feature.names <- read.delim(x, 
+                               header = FALSE,
+                               stringsAsFactors = FALSE)
+              }
+              if(grepl("count", x)){
+                counts <- readMM(x)
+              }
+            }
+            rownames(counts) = feature.names$V2
+            genes <- rownames(counts)
+    
+            colnames(counts) = c(1:dim(counts)[2]) 
+            cell_ids <- colnames(counts)
+        }else{
+        
+          # Read 10X data from the directory provided in input.dir
+          counts <- Read10X(data.dir = input.dir)
+          
+          # Import barcodes
+          cell_ids <- colnames(counts)
+          # Import genes
+          genes <- rownames(counts)
+        }
 }
 ```
 
@@ -225,7 +259,7 @@ Before we assess our metrics we are going to save all of the work we have done t
 
 Provide the name for your dataset to the dataset.name variable in quotes
 ```{r}
-dataset.name = "S198"
+dataset.name = "S598"
 # Save data to single cell experiment variable
 se <- SingleCellExperiment(assays=list(counts=counts), 
                            colData = metadata)
@@ -240,7 +274,7 @@ In case you want to assess previously analysed data you can provide your raw dat
 
 Load data
 ```{r}
-already = TRUE
+already = FALSE
 input.data = "se_filtered_S198_0.008_0.03.rds"
 if(already){
 se <- readRDS(input.data)
