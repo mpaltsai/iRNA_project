@@ -25,8 +25,8 @@ if (exists("file.to.use")) {
 
 #provide file paths to gene sets you wish to compare previous lists with (i.e. experimentally verified gene sets from ChipSeq etc)
 
-background.genes.path1 = "/home/ismini/Documents/bioinfo-grad/mavrothalassitis/iRNA_project/input_data/input_data/IGF_RA_genes.csv"
-background.genes.path2 = "/home/ismini/Documents/bioinfo-grad/mavrothalassitis/iRNA_project/input_data/input_data/ChIPseq_genes.csv"
+background.genes.path1 = "/path/to/IGF_RA_genes.csv"
+background.genes.path2 = "/path/to/ChIPseq_genes.csv"
 ```
 
 ```{r}
@@ -341,6 +341,6 @@ for(x in files) {
   dimnames(sign_new_targets) <- list(c("Gene list", "Comparison", "pvalue", "Bonferroni correction", "BH correction", "q values", "common genes", rep("", dim(sign_new_targets)[1]-7)), c(1:length(sign_p_values_index)))
   f.path = paste0(file.path(output.path,"sigificant_genesets/"),file.name.no.ext, "_sign_GeneLists", ".csv")
   write.table(sign_new_targets, f.path, sep=",", na="")
-  message("\nResults are stored at ", f.path)
+  message("\nResults stored at ", f.path)
 }
 ```
