@@ -13,9 +13,9 @@ getwd()
 rm(list=ls())
 #Set parameters
 #provide the directory path if you have more than one files to analyze 
-dir.path = "~/Documents/bioinfo-grad/mavrothalassitis/iRNA_project/results/2020-05-07_18:44/ERF"
+dir.path = "~/path/to/gene_list/you/want/to/compare"
 #and the file containing gene sets to be analysed, if you wish to analyse only that file. IF NOT leave it blank otherwise analysis will run on that file
-file.to.use = "ERF_0.03_S190.csv"
+file.to.use = "filename/with/suffix"
 #(NOTE: paths in quotes)
 if (exists("file.to.use")) {
   files <- file.path(dir.path,file.to.use)
